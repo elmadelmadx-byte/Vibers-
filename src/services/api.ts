@@ -6,7 +6,10 @@ import {
   StatCardCustomization,
   SubAdminAccount,
   ActivityShowcase,
-  BroadcastNotification
+  BroadcastNotification,
+  ContactChannel,
+  SupportTicket,
+  TrashedApplication
 } from '../types';
 
 export interface FullBackendState {
@@ -19,6 +22,10 @@ export interface FullBackendState {
   stats: LivePlatformStats;
   customCards: StatCardCustomization[];
   subAdmins?: SubAdminAccount[];
+  contactChannels?: ContactChannel[];
+  tickets?: SupportTicket[];
+  isRatingsLocked?: boolean;
+  trashedApplications?: TrashedApplication[];
 }
 
 export const api = {
@@ -268,6 +275,154 @@ export const api = {
       return res.ok;
     } catch (err) {
       console.error('Failed to update stats on /api/stats:', err);
+      return false;
+    }
+  },
+
+  async updateContactChannels(channels: ContactChannel[]): Promise<boolean> {
+    try {
+      const res = await fetch('/api/contact-channels', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to update contact channels:', err);
+      return false;
+    }
+  },
+
+  async submitTicket(ticket: Omit<SupportTicket, 'id' | 'createdAt' | 'status'>): Promise<SupportTicket | null> {
+    try {
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticket)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.ticket || null;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to submit ticket:', err);
+      return null;
+    }
+  },
+
+  async updateTicketStatus(id: string, status: SupportTicket['status'], adminReply?: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/tickets/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, adminReply })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to update ticket status:', err);
+      return false;
+    }
+  },
+
+  async deleteTicket(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/tickets/${id}`, {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to delete ticket:', err);
+      return false;
+    }
+  },
+
+  async toggleRatingsLock(isRatingsLocked: boolean): Promise<boolean> {
+    try {
+      const res = await fetch('/api/ratings-lock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRatingsLocked })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to toggle ratings lock:', err);
+      return false;
+    }
+  },
+
+  async trashApplication(id: string, reason?: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/applications/${id}/trash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to trash application:', err);
+      return false;
+    }
+  },
+
+  async trashInactiveApplications(): Promise<{ success: boolean; movedCount: number }> {
+    try {
+      const res = await fetch('/api/applications/trash-inactive', {
+        method: 'POST'
+      });
+      if (!res.ok) return { success: false, movedCount: 0 };
+      const data = await res.json();
+      return { success: true, movedCount: data.movedCount || 0 };
+    } catch (err) {
+      console.error('Failed to trash inactive applications:', err);
+      return { success: false, movedCount: 0 };
+    }
+  },
+
+  async restoreTrashedApplication(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/trash/${id}/restore`, {
+        method: 'POST'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to restore trashed application:', err);
+      return false;
+    }
+  },
+
+  async restoreAllTrashed(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/trash/restore-all', {
+        method: 'POST'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to restore all trashed applications:', err);
+      return false;
+    }
+  },
+
+  async deleteTrashedPermanently(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/trash/${id}`, {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to delete trashed application permanently:', err);
+      return false;
+    }
+  },
+
+  async emptyTrash(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/trash', {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to empty trash:', err);
       return false;
     }
   }

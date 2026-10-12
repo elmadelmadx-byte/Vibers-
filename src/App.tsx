@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Lock, ShieldCheck, Bell, Sparkles } from 'lucide-react';
+import { Lock, ShieldCheck, Bell, Sparkles, Search, Phone, MessageCircle, Mail } from 'lucide-react';
 import {
   BannerSlide,
   TeamApplication,
@@ -10,7 +10,10 @@ import {
   SubAdminAccount,
   ActiveAdminSession,
   ActivityShowcase,
-  BroadcastNotification
+  BroadcastNotification,
+  ContactChannel,
+  SupportTicket,
+  TrashedApplication
 } from './types';
 import {
   INITIAL_BANNERS,
@@ -19,7 +22,9 @@ import {
   INITIAL_CUSTOMIZABLE_CARDS,
   INITIAL_APPLICATIONS,
   INITIAL_COMMENTS,
-  INITIAL_NOTIFICATIONS
+  INITIAL_NOTIFICATIONS,
+  INITIAL_CONTACT_CHANNELS,
+  INITIAL_TICKETS
 } from './data/initialData';
 import { api } from './services/api';
 import { HeroSlider } from './components/HeroSlider';
@@ -29,6 +34,9 @@ import { RatingsAndComments } from './components/RatingsAndComments';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { NotificationModal } from './components/NotificationModal';
+import { ContactModal } from './components/ContactModal';
+import { SearchCodeModal } from './components/SearchCodeModal';
+import { SupportChatModal } from './components/SupportChatModal';
 
 const STORAGE_KEYS = {
   BANNERS: 'vibers_v_banners_v2',
@@ -112,6 +120,42 @@ export function App() {
     }
   });
 
+  const [contactChannels, setContactChannels] = useState<ContactChannel[]>(() => {
+    try {
+      const saved = localStorage.getItem('vibers_v_contacts_v2');
+      return saved ? JSON.parse(saved) : INITIAL_CONTACT_CHANNELS;
+    } catch {
+      return INITIAL_CONTACT_CHANNELS;
+    }
+  });
+
+  const [tickets, setTickets] = useState<SupportTicket[]>(() => {
+    try {
+      const saved = localStorage.getItem('vibers_v_tickets_v2');
+      return saved ? JSON.parse(saved) : INITIAL_TICKETS;
+    } catch {
+      return INITIAL_TICKETS;
+    }
+  });
+
+  const [isRatingsLocked, setIsRatingsLocked] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('vibers_v_ratings_locked_v2');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [trashedApplications, setTrashedApplications] = useState<TrashedApplication[]>(() => {
+    try {
+      const saved = localStorage.getItem('vibers_v_trash_v2');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [preselectedRole, setPreselectedRole] = useState<RoleId | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [activeAdminSession, setActiveAdminSession] = useState<ActiveAdminSession | null>(null);
@@ -119,6 +163,11 @@ export function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDashboardModalOpen, setIsDashboardModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState('');
+  const [isSupportChatModalOpen, setIsSupportChatModalOpen] = useState(false);
+  const [supportPrefilledCode, setSupportPrefilledCode] = useState('');
   const [welcomeToast, setWelcomeToast] = useState<BroadcastNotification | null>(null);
   const [liveNewAlert, setLiveNewAlert] = useState<string | null>(null);
 
@@ -166,6 +215,14 @@ export function App() {
       if (remote.stats) setStats(remote.stats);
       if (Array.isArray(remote.customCards)) setCustomCards(remote.customCards);
       if (Array.isArray(remote.subAdmins)) setSubAdmins(remote.subAdmins);
+      if (Array.isArray(remote.contactChannels)) setContactChannels(remote.contactChannels);
+      if (Array.isArray(remote.tickets)) setTickets(remote.tickets);
+      if (typeof remote.isRatingsLocked === 'boolean') {
+        setIsRatingsLocked(remote.isRatingsLocked);
+      }
+      if (Array.isArray(remote.trashedApplications)) {
+        setTrashedApplications(remote.trashedApplications);
+      }
     };
 
     fetchSync();
@@ -179,6 +236,18 @@ export function App() {
   }, []);
 
   // Sync to localStorage as resilient offline mirror
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibers_v_ratings_locked_v2', JSON.stringify(isRatingsLocked));
+    } catch {}
+  }, [isRatingsLocked]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibers_v_trash_v2', JSON.stringify(trashedApplications));
+    } catch {}
+  }, [trashedApplications]);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.BANNERS, JSON.stringify(banners));
@@ -214,6 +283,14 @@ export function App() {
       localStorage.setItem(STORAGE_KEYS.CUSTOM_CARDS, JSON.stringify(customCards));
     } catch {}
   }, [customCards]);
+
+  const handleToggleRatingsLock = async (locked: boolean) => {
+    setIsRatingsLocked(locked);
+    try {
+      localStorage.setItem('vibers_v_ratings_locked_v2', JSON.stringify(locked));
+    } catch {}
+    await api.toggleRatingsLock(locked);
+  };
 
   const handleNavigate = (targetSelector: string) => {
     const el = document.querySelector(targetSelector);
@@ -307,9 +384,81 @@ export function App() {
     await api.updateApplicationStatus(id, status, notes, rating);
   };
 
-  const handleDeleteApplication = async (id: string) => {
+  const handleTrashApplication = async (id: string, reason?: string) => {
+    const target = applications.find((a) => a.id === id);
+    if (!target) return;
     setApplications((prev) => prev.filter((a) => a.id !== id));
-    await api.deleteApplication(id);
+    const trashed: TrashedApplication = {
+      ...target,
+      trashedAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+      trashedReason: reason || (target.status === 'rejected' ? 'مرفوض من الإدارة' : 'نقل إلى سلة المهملات'),
+      originalStatusBeforeTrash: target.status
+    };
+    setTrashedApplications((prev) => [trashed, ...prev]);
+    await api.trashApplication(id, reason);
+  };
+
+  const handleTrashInactiveApplications = async () => {
+    const inactive = applications.filter(
+      (a) => a.status === 'rejected' || a.status === 'waitlist' || a.status === 'banned'
+    );
+    if (inactive.length === 0) return;
+    const inactiveIds = new Set(inactive.map((a) => a.id));
+    setApplications((prev) => prev.filter((a) => !inactiveIds.has(a.id)));
+    const newlyTrashed: TrashedApplication[] = inactive.map((app) => ({
+      ...app,
+      trashedAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+      trashedReason:
+        app.status === 'rejected'
+          ? 'مرفوض بقرار الإدارة'
+          : app.status === 'banned'
+          ? 'محظور من المنظومة'
+          : 'غير نشط / قائمة الانتظار',
+      originalStatusBeforeTrash: app.status
+    }));
+    setTrashedApplications((prev) => [...newlyTrashed, ...prev]);
+    await api.trashInactiveApplications();
+  };
+
+  const handleRestoreTrashedApplication = async (id: string) => {
+    const target = trashedApplications.find((a) => a.id === id);
+    if (!target) return;
+    setTrashedApplications((prev) => prev.filter((a) => a.id !== id));
+    const { trashedAt, trashedReason, originalStatusBeforeTrash, ...originalApp } = target;
+    const restoredApp: TeamApplication = {
+      ...originalApp,
+      status: originalStatusBeforeTrash || 'pending'
+    };
+    setApplications((prev) => [restoredApp, ...prev]);
+    await api.restoreTrashedApplication(id);
+  };
+
+  const handleRestoreAllTrashed = async () => {
+    if (trashedApplications.length === 0) return;
+    const restoredItems: TeamApplication[] = trashedApplications.map((target) => {
+      const { trashedAt, trashedReason, originalStatusBeforeTrash, ...originalApp } = target;
+      return {
+        ...originalApp,
+        status: originalStatusBeforeTrash || 'pending'
+      };
+    });
+    setApplications((prev) => [...restoredItems, ...prev]);
+    setTrashedApplications([]);
+    await api.restoreAllTrashed();
+  };
+
+  const handleDeleteTrashedPermanently = async (id: string) => {
+    setTrashedApplications((prev) => prev.filter((a) => a.id !== id));
+    await api.deleteTrashedPermanently(id);
+  };
+
+  const handleEmptyTrash = async () => {
+    setTrashedApplications([]);
+    await api.emptyTrash();
+  };
+
+  const handleDeleteApplication = async (id: string) => {
+    await handleTrashApplication(id);
   };
 
   // Banner Management Handlers
@@ -387,6 +536,7 @@ export function App() {
     stars: number;
     comment: string;
     activityType: string;
+    imageUrl?: string;
   }) => {
     const created: UserRatingComment = {
       id: `rev-${Date.now()}`,
@@ -395,6 +545,7 @@ export function App() {
       stars: entry.stars,
       comment: entry.comment,
       activityType: entry.activityType,
+      imageUrl: entry.imageUrl,
       createdAt: 'الآن'
     };
     setComments((prev) => [created, ...prev]);
@@ -436,6 +587,38 @@ export function App() {
   const handleUpdateCardCustomization = async (updated: StatCardCustomization[]) => {
     setCustomCards(updated);
     await api.updateCustomCards(updated);
+  };
+
+  // Contact Channels handler
+  const handleUpdateContactChannels = async (updated: ContactChannel[]) => {
+    setContactChannels(updated);
+    await api.updateContactChannels(updated);
+  };
+
+  // Submit User Grievance / Ticket
+  const handleSubmitTicket = async (ticket: Omit<SupportTicket, 'id' | 'createdAt' | 'status'>) => {
+    const created = await api.submitTicket(ticket);
+    if (created) {
+      setTickets((prev) => [created, ...prev]);
+      return true;
+    }
+    return false;
+  };
+
+  const handleUpdateTicketStatus = async (
+    id: string,
+    status: SupportTicket['status'],
+    adminReply?: string
+  ) => {
+    setTickets((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status, adminReply: adminReply || t.adminReply } : t))
+    );
+    await api.updateTicketStatus(id, status, adminReply);
+  };
+
+  const handleDeleteTicket = async (id: string) => {
+    setTickets((prev) => prev.filter((t) => t.id !== id));
+    await api.deleteTicket(id);
   };
 
   const openExecutiveAccess = () => {
@@ -522,8 +705,64 @@ export function App() {
           </a>
         </nav>
 
-        {/* Zone 3: Actions & Notifications Bell */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: Actions & Quick Icons (Search Code, WhatsApp Numbers, Chat Support, Bell, Join CTA) */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Top Search Code Icon (Direct User Requirement: search by tracking code in top bar) */}
+          <button
+            type="button"
+            onClick={() => {
+              setSearchInitialQuery('');
+              setIsSearchModalOpen(true);
+            }}
+            aria-label="الاستعلام والبحث بكود التسجيل"
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-400 text-slate-300 hover:text-amber-300 transition-colors cursor-pointer flex items-center gap-1.5"
+            title="الاستعلام بكود الطلب (مقبول / قيد الانتظار / مرفوض)"
+          >
+            <Search className="w-4 h-4 text-amber-400" />
+            <span className="hidden xl:inline text-xs font-semibold">بحث بكود الطلب</span>
+          </button>
+
+          {/* Top WhatsApp Numbers Icon (Direct User Requirement: fixed WhatsApp numbers updatable from admin) */}
+          <button
+            type="button"
+            onClick={() => setIsContactModalOpen(true)}
+            aria-label="أرقام الواتساب المعتمدة (+201065874461 / +201066934250)"
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer flex items-center gap-1.5"
+            title="أرقام الواتساب الرسمية: +201065874461 / +201066934250"
+          >
+            <Phone className="w-4 h-4 text-emerald-400" />
+            <span className="hidden xl:inline text-xs font-semibold">أرقام الواتساب الرسمية</span>
+          </button>
+
+          {/* Top Support Chat Icon (Direct User Requirement: chat connected to admin dashboard) */}
+          <button
+            type="button"
+            onClick={() => setIsSupportChatModalOpen(true)}
+            aria-label="الدردشة والدعم المباشر"
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-400 transition-colors cursor-pointer flex items-center gap-1.5"
+            title="مراسلة الإدارة وإرسال شكوى أو مشكلة"
+          >
+            <MessageCircle className="w-4 h-4 text-cyan-400" />
+            <span className="hidden xl:inline text-xs font-semibold">دردشة وشكاوى</span>
+          </button>
+
+          {/* Top Admin Dashboard Access Icon */}
+          <button
+            type="button"
+            onClick={openExecutiveAccess}
+            aria-label="تسجيل الدخول إلى لوحة الإدارة"
+            className="p-2 rounded-xl bg-gradient-to-r from-amber-500/15 to-yellow-500/10 hover:from-amber-500/25 hover:to-yellow-500/20 border border-amber-500/40 text-amber-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+            title="تسجيل الدخول إلى لوحة الإدارة"
+          >
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <span className="hidden xl:inline text-xs font-bold">لوحة الإدارة</span>
+            {pendingAppsCount > 0 && (
+              <span className="w-4 h-4 rounded-full bg-rose-600 text-white font-mono-num font-bold text-[9px] flex items-center justify-center">
+                {pendingAppsCount}
+              </span>
+            )}
+          </button>
+
           {/* Notification Bell Button */}
           <button
             type="button"
@@ -532,7 +771,7 @@ export function App() {
             className="relative p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-amber-400 transition-colors cursor-pointer"
             title="الإشعارات ورسائل الترحيب الملكية"
           >
-            <Bell className="w-5 h-5" />
+            <Bell className="w-4 h-4" />
             {notifications.length > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 text-white font-mono-num font-bold text-[10px] flex items-center justify-center shadow-md animate-pulse">
                 {notifications.length}
@@ -542,9 +781,9 @@ export function App() {
 
           <a
             href="#join-team"
-            className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-lg shadow-blue-600/20"
+            className="px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-lg shadow-blue-600/20"
           >
-            تقديم طلب انضمام
+            تقديم طلب
           </a>
         </div>
       </header>
@@ -566,26 +805,107 @@ export function App() {
         <TeamApplicationForm
           preselectedRole={preselectedRole}
           onSubmitApplication={handleSubmitApplication}
+          onOpenSearchModal={(code) => {
+            setSearchInitialQuery(code);
+            setIsSearchModalOpen(true);
+          }}
         />
 
         {/* 1-to-7 Stars Rating & Comments Section */}
         <RatingsAndComments
           comments={comments}
           bannedHandles={bannedHandles}
+          isRatingsLocked={isRatingsLocked}
           onAddComment={handleAddComment}
         />
       </main>
 
+      {/* Floating Action Buttons Dock */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+        {/* Independent Admin Login Button (Directly requested: ايقونه تسجيل الدخول الى لوحه الاداره فوق مراسله الاداره للشكاوي ايقونه خاصه بها ومستقله) */}
+        <button
+          type="button"
+          onClick={openExecutiveAccess}
+          className="px-4 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-bold text-xs sm:text-sm shadow-2xl shadow-amber-950/70 flex items-center gap-2 cursor-pointer border border-amber-300/80 transition-all hover:scale-105 active:scale-95 group"
+          title="تسجيل الدخول إلى لوحة الإدارة (المدير العام عيون Prince)"
+          aria-label="تسجيل الدخول إلى لوحة الإدارة"
+        >
+          <div className="w-6 h-6 rounded-lg bg-black/15 flex items-center justify-center shrink-0">
+            {isAdminAuthenticated && activeAdminSession ? (
+              <ShieldCheck className="w-4 h-4 text-slate-950" />
+            ) : (
+              <Lock className="w-4 h-4 text-slate-950" />
+            )}
+          </div>
+          <span>
+            {isAdminAuthenticated && activeAdminSession
+              ? `لوحة الإدارة (${activeAdminSession.name})`
+              : 'تسجيل الدخول إلى لوحة الإدارة'}
+          </span>
+          {pendingAppsCount > 0 && (
+            <span className="w-5 h-5 rounded-full bg-rose-600 text-white font-mono-num font-bold text-[10px] flex items-center justify-center shadow-md animate-pulse">
+              {pendingAppsCount}
+            </span>
+          )}
+        </button>
+
+        {/* Floating Support Chat & Complaints Button */}
+        <button
+          type="button"
+          onClick={() => setIsSupportChatModalOpen(true)}
+          className="px-4 py-3 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs sm:text-sm shadow-2xl shadow-cyan-900/60 flex items-center gap-2 cursor-pointer border border-cyan-400/40 transition-transform hover:scale-105"
+          title="الدردشة ومراسلة الإدارة وإرسال الشكاوى"
+        >
+          <MessageCircle className="w-5 h-5 text-white animate-pulse" />
+          <span>مراسلة الإدارة والشكاوى</span>
+        </button>
+      </div>
+
       {/* Quiet Footer with Discreet Bottom-Left General Manager Login */}
       <footer className="border-t border-slate-800/80 bg-[#05070F] py-10 px-6 sm:px-8">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="text-base font-bold text-white">
               Vibers V العالمية لتنمية التطبيقات ودعم تطبيقات الدردشة الصوتية
             </div>
             <p className="text-xs text-slate-400">
               المدير العام والمدير التنفيذي: <span className="text-amber-400 font-semibold">عيون Prince</span> · جميع الحقوق محفوظة © {new Date().getFullYear()}
             </p>
+            {/* Official Phone Numbers Display */}
+            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
+              <span className="text-slate-400 font-semibold">الأرقام الرسمية:</span>
+              <a
+                href="https://wa.me/201065874461"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-mono-num font-bold hover:bg-emerald-900/50 transition-colors"
+                dir="ltr"
+                title="واتساب الخط الرسمي 1"
+              >
+                <Phone className="w-3 h-3 text-emerald-400" />
+                +201065874461
+              </a>
+              <a
+                href="https://wa.me/201066934250"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-emerald-300 font-mono-num font-bold hover:bg-slate-800 transition-colors"
+                dir="ltr"
+                title="واتساب الخط الرسمي 2"
+              >
+                <Phone className="w-3 h-3 text-emerald-400" />
+                +201066934250
+              </a>
+              <a
+                href="mailto:vibersvge@gmail.com"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-950/40 border border-blue-500/40 text-blue-300 font-mono-num hover:bg-blue-900/50 transition-colors"
+                dir="ltr"
+                title="البريد الرسمي"
+              >
+                <Mail className="w-3 h-3 text-blue-400" />
+                vibersvge@gmail.com
+              </a>
+            </div>
           </div>
 
           {/* Discreet General Manager Login */}
@@ -635,6 +955,36 @@ export function App() {
         session={activeAdminSession}
         onSendBroadcast={handleSendBroadcast}
         onDeleteNotification={handleDeleteNotification}
+      />
+
+      {/* Official WhatsApp Numbers Modal */}
+      <ContactModal
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
+        contactChannels={contactChannels}
+        onOpenSupportModal={() => setIsSupportChatModalOpen(true)}
+      />
+
+      {/* Search Code Status & Verification Modal */}
+      <SearchCodeModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        applications={applications}
+        contactChannels={contactChannels}
+        initialQuery={searchInitialQuery}
+        onOpenSupportModal={(code) => {
+          setSupportPrefilledCode(code || '');
+          setIsSupportChatModalOpen(true);
+        }}
+      />
+
+      {/* User Grievance & In-Site Support Chat Modal */}
+      <SupportChatModal
+        isOpen={isSupportChatModalOpen}
+        onClose={() => setIsSupportChatModalOpen(false)}
+        contactChannels={contactChannels}
+        onSubmitTicket={handleSubmitTicket}
+        prefilledCode={supportPrefilledCode}
       />
 
       {/* Floating Welcome Reassurance Toast for Incoming Users */}
@@ -709,6 +1059,20 @@ export function App() {
           onCreateSubAdmin={handleCreateSubAdmin}
           onDeleteSubAdmin={handleDeleteSubAdmin}
           dailyActiveLogins={stats.dailyActiveLogins || 42890}
+          contactChannels={contactChannels}
+          onUpdateContactChannels={handleUpdateContactChannels}
+          tickets={tickets}
+          onUpdateTicketStatus={handleUpdateTicketStatus}
+          onDeleteTicket={handleDeleteTicket}
+          isRatingsLocked={isRatingsLocked}
+          onToggleRatingsLock={handleToggleRatingsLock}
+          trashedApplications={trashedApplications}
+          onTrashApplication={handleTrashApplication}
+          onTrashInactiveApplications={handleTrashInactiveApplications}
+          onRestoreTrashedApplication={handleRestoreTrashedApplication}
+          onRestoreAllTrashed={handleRestoreAllTrashed}
+          onDeleteTrashedPermanently={handleDeleteTrashedPermanently}
+          onEmptyTrash={handleEmptyTrash}
         />
       )}
     </div>

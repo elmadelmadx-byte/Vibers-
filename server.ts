@@ -10,7 +10,9 @@ import {
   INITIAL_CUSTOMIZABLE_CARDS,
   INITIAL_APPLICATIONS,
   INITIAL_COMMENTS,
-  INITIAL_NOTIFICATIONS
+  INITIAL_NOTIFICATIONS,
+  INITIAL_CONTACT_CHANNELS,
+  INITIAL_TICKETS
 } from './src/data/initialData';
 import {
   TeamApplication,
@@ -20,7 +22,10 @@ import {
   LivePlatformStats,
   StatCardCustomization,
   SubAdminAccount,
-  BroadcastNotification
+  BroadcastNotification,
+  ContactChannel,
+  SupportTicket,
+  TrashedApplication
 } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +44,10 @@ interface DatabaseSchema {
   stats: LivePlatformStats;
   customCards: StatCardCustomization[];
   subAdmins: SubAdminAccount[];
+  contactChannels: ContactChannel[];
+  tickets: SupportTicket[];
+  isRatingsLocked: boolean;
+  trashedApplications: TrashedApplication[];
 }
 
 const DEFAULT_SUB_ADMINS: SubAdminAccount[] = [
@@ -76,7 +85,10 @@ function loadDatabase(): DatabaseSchema {
         banners: parsed.banners || INITIAL_BANNERS,
         activities: parsed.activities || INITIAL_ACTIVITIES,
         notifications: parsed.notifications || INITIAL_NOTIFICATIONS,
-        comments: parsed.comments || INITIAL_COMMENTS,
+        comments:
+          parsed.comments && parsed.comments.length >= 20
+            ? parsed.comments
+            : INITIAL_COMMENTS,
         bannedHandles: parsed.bannedHandles || [],
         stats: {
           ...INITIAL_STATS,
@@ -92,7 +104,15 @@ function loadDatabase(): DatabaseSchema {
           dailyActiveLogins: parsed.stats?.dailyActiveLogins || 42890
         },
         customCards: parsed.customCards || INITIAL_CUSTOMIZABLE_CARDS,
-        subAdmins: parsed.subAdmins || DEFAULT_SUB_ADMINS
+        subAdmins: parsed.subAdmins || DEFAULT_SUB_ADMINS,
+        contactChannels:
+          parsed.contactChannels &&
+          parsed.contactChannels.some((c: any) => c.value === '+201065874461')
+            ? parsed.contactChannels
+            : INITIAL_CONTACT_CHANNELS,
+        tickets: parsed.tickets || INITIAL_TICKETS,
+        isRatingsLocked: typeof parsed.isRatingsLocked === 'boolean' ? parsed.isRatingsLocked : false,
+        trashedApplications: parsed.trashedApplications || []
       };
     }
   } catch (err) {
@@ -108,7 +128,11 @@ function loadDatabase(): DatabaseSchema {
     bannedHandles: [],
     stats: INITIAL_STATS,
     customCards: INITIAL_CUSTOMIZABLE_CARDS,
-    subAdmins: DEFAULT_SUB_ADMINS
+    subAdmins: DEFAULT_SUB_ADMINS,
+    contactChannels: INITIAL_CONTACT_CHANNELS,
+    tickets: INITIAL_TICKETS,
+    isRatingsLocked: false,
+    trashedApplications: []
   };
   saveDatabase(initialDb);
   return initialDb;
@@ -260,11 +284,157 @@ async function startServer() {
     res.json({ success: true, application: updatedApp, stats: db.stats });
   });
 
+  // Move application to Trash (سلة المهملات)
+  app.post('/api/applications/:id/trash', (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const target = db.applications.find((a) => a.id === id);
+    if (!target) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    db.applications = db.applications.filter((a) => a.id !== id);
+    const trashedItem: TrashedApplication = {
+      ...target,
+      trashedAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+      trashedReason: reason || (target.status === 'rejected' ? 'مرفوض من الإدارة' : 'نقل إلى سلة المهملات'),
+      originalStatusBeforeTrash: target.status
+    };
+
+    db.trashedApplications = [trashedItem, ...(db.trashedApplications || [])];
+    saveDatabase(db);
+    res.json({
+      success: true,
+      applications: db.applications,
+      trashedApplications: db.trashedApplications,
+      trashedItem
+    });
+  });
+
+  // Bulk move rejected & inactive candidates to trash
+  app.post('/api/applications/trash-inactive', (_req, res) => {
+    const inactiveList = db.applications.filter(
+      (a) => a.status === 'rejected' || a.status === 'waitlist' || a.status === 'banned'
+    );
+    if (inactiveList.length === 0) {
+      return res.json({
+        success: true,
+        movedCount: 0,
+        applications: db.applications,
+        trashedApplications: db.trashedApplications
+      });
+    }
+
+    const inactiveIds = new Set(inactiveList.map((a) => a.id));
+    db.applications = db.applications.filter((a) => !inactiveIds.has(a.id));
+
+    const newlyTrashed: TrashedApplication[] = inactiveList.map((app) => ({
+      ...app,
+      trashedAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+      trashedReason:
+        app.status === 'rejected'
+          ? 'مرفوض بقرار الإدارة'
+          : app.status === 'banned'
+          ? 'محظور من المنظومة'
+          : 'غير نشط / قائمة الانتظار',
+      originalStatusBeforeTrash: app.status
+    }));
+
+    db.trashedApplications = [...newlyTrashed, ...(db.trashedApplications || [])];
+    saveDatabase(db);
+    res.json({
+      success: true,
+      movedCount: newlyTrashed.length,
+      applications: db.applications,
+      trashedApplications: db.trashedApplications
+    });
+  });
+
+  // Restore application from Trash back to active list (زر الاسترجاع)
+  app.post('/api/trash/:id/restore', (req, res) => {
+    const { id } = req.params;
+    const target = (db.trashedApplications || []).find((a) => a.id === id);
+    if (!target) {
+      return res.status(404).json({ error: 'Trashed application not found' });
+    }
+
+    db.trashedApplications = (db.trashedApplications || []).filter((a) => a.id !== id);
+
+    // Extract original application data
+    const { trashedAt, trashedReason, originalStatusBeforeTrash, ...originalApp } = target;
+    const restoredApp: TeamApplication = {
+      ...originalApp,
+      status: originalStatusBeforeTrash || 'pending'
+    };
+
+    db.applications = [restoredApp, ...db.applications];
+    saveDatabase(db);
+    res.json({
+      success: true,
+      restoredApp,
+      applications: db.applications,
+      trashedApplications: db.trashedApplications
+    });
+  });
+
+  // Restore ALL applications from Trash back to active list (استرجاع كافة المحذوفات)
+  app.post('/api/trash/restore-all', (_req, res) => {
+    if (!db.trashedApplications || db.trashedApplications.length === 0) {
+      return res.json({ success: true, restoredCount: 0, applications: db.applications, trashedApplications: [] });
+    }
+
+    const restoredItems: TeamApplication[] = db.trashedApplications.map((target) => {
+      const { trashedAt, trashedReason, originalStatusBeforeTrash, ...originalApp } = target;
+      return {
+        ...originalApp,
+        status: originalStatusBeforeTrash || 'pending'
+      };
+    });
+
+    db.applications = [...restoredItems, ...db.applications];
+    db.trashedApplications = [];
+    saveDatabase(db);
+    res.json({
+      success: true,
+      restoredCount: restoredItems.length,
+      applications: db.applications,
+      trashedApplications: []
+    });
+  });
+
+  // Permanently delete single item from trash
+  app.delete('/api/trash/:id', (req, res) => {
+    const { id } = req.params;
+    db.trashedApplications = (db.trashedApplications || []).filter((a) => a.id !== id);
+    saveDatabase(db);
+    res.json({ success: true, trashedApplications: db.trashedApplications });
+  });
+
+  // Empty entire Trash Can
+  app.delete('/api/trash', (_req, res) => {
+    db.trashedApplications = [];
+    saveDatabase(db);
+    res.json({ success: true, trashedApplications: [] });
+  });
+
+  // Fallback direct delete
   app.delete('/api/applications/:id', (req, res) => {
     const { id } = req.params;
-    db.applications = db.applications.filter((a) => a.id !== id);
+    const target = db.applications.find((a) => a.id === id);
+    if (target) {
+      db.applications = db.applications.filter((a) => a.id !== id);
+      db.trashedApplications = [
+        {
+          ...target,
+          trashedAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+          trashedReason: 'حذف ونقل للسلة',
+          originalStatusBeforeTrash: target.status
+        },
+        ...(db.trashedApplications || [])
+      ];
+    }
     saveDatabase(db);
-    res.json({ success: true, id });
+    res.json({ success: true, applications: db.applications, trashedApplications: db.trashedApplications });
   });
 
   // 4. Comments & Ratings
@@ -319,6 +489,14 @@ async function startServer() {
     );
     saveDatabase(db);
     res.json({ success: true, bannedHandles: db.bannedHandles });
+  });
+
+  // Lock / Unlock Reviews and Ratings Display
+  app.put('/api/ratings-lock', (req, res) => {
+    const { isRatingsLocked } = req.body;
+    db.isRatingsLocked = Boolean(isRatingsLocked);
+    saveDatabase(db);
+    res.json({ success: true, isRatingsLocked: db.isRatingsLocked });
   });
 
   // 5. Banners (Full text & image editing)
@@ -417,6 +595,72 @@ async function startServer() {
       saveDatabase(db);
     }
     res.json({ success: true, stats: db.stats });
+  });
+
+  // 10. Official Management Contact Channels (WhatsApp & Email Management)
+  app.get('/api/contact-channels', (_req, res) => {
+    res.json(db.contactChannels || INITIAL_CONTACT_CHANNELS);
+  });
+
+  app.put('/api/contact-channels', (req, res) => {
+    const { channels } = req.body;
+    if (Array.isArray(channels)) {
+      db.contactChannels = channels;
+      saveDatabase(db);
+    }
+    res.json({ success: true, contactChannels: db.contactChannels });
+  });
+
+  // 11. Support Tickets & User Grievance Requests (Integrated Chat / Support Hub)
+  app.get('/api/tickets', (_req, res) => {
+    res.json(db.tickets || []);
+  });
+
+  app.post('/api/tickets', (req, res) => {
+    const ticket: SupportTicket = req.body;
+    if (!ticket || !ticket.applicantOrUserName || !ticket.whatsappOrEmail || !ticket.problemDescription) {
+      return res.status(400).json({ error: 'Missing mandatory ticket fields' });
+    }
+
+    const created: SupportTicket = {
+      id: ticket.id || `tkt-${Date.now()}`,
+      trackingCode: ticket.trackingCode || `VBR-${Math.floor(1000 + Math.random() * 9000)}`,
+      applicantOrUserName: ticket.applicantOrUserName.trim(),
+      realFullNameOptional: ticket.realFullNameOptional?.trim() || undefined,
+      role: ticket.role || 'عضو / متقدم',
+      whatsappOrEmail: ticket.whatsappOrEmail.trim(),
+      problemDescription: ticket.problemDescription.trim(),
+      reasonOrDetails: ticket.reasonOrDetails?.trim() || '',
+      status: 'new',
+      createdAt: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+      adminReply: undefined
+    };
+
+    db.tickets = [created, ...(db.tickets || [])];
+    saveDatabase(db);
+    res.status(201).json({ success: true, ticket: created, tickets: db.tickets });
+  });
+
+  app.put('/api/tickets/:id', (req, res) => {
+    const { id } = req.params;
+    const { status, adminReply } = req.body;
+    db.tickets = (db.tickets || []).map((t) => {
+      if (t.id !== id) return t;
+      return {
+        ...t,
+        status: status !== undefined ? status : t.status,
+        adminReply: adminReply !== undefined ? adminReply : t.adminReply
+      };
+    });
+    saveDatabase(db);
+    res.json({ success: true, tickets: db.tickets });
+  });
+
+  app.delete('/api/tickets/:id', (req, res) => {
+    const { id } = req.params;
+    db.tickets = (db.tickets || []).filter((t) => t.id !== id);
+    saveDatabase(db);
+    res.json({ success: true, tickets: db.tickets });
   });
 
   // --- VITE MIDDLEWARE ---

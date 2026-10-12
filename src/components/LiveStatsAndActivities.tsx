@@ -282,7 +282,9 @@ export const LiveStatsAndActivities: React.FC<LiveStatsAndActivitiesProps> = ({
                 : isWide
                 ? 'lg:col-span-7'
                 : 'lg:col-span-5';
-            const hasError = failedImages[activity.id];
+            const actImgUrl = activity.imageUrl || '';
+            const isDataUrl = actImgUrl.startsWith('data:');
+            const hasError = !isDataUrl && Boolean(failedImages[actImgUrl]);
 
             return (
               <article
@@ -290,14 +292,26 @@ export const LiveStatsAndActivities: React.FC<LiveStatsAndActivitiesProps> = ({
                 className={`${colSpanClass} rounded-2xl bg-[#0F1424] border border-slate-800/90 hover:border-slate-700 overflow-hidden flex flex-col justify-between transition-colors group`}
               >
                 <div className="relative h-64 sm:h-72 w-full overflow-hidden bg-slate-950">
-                  {!hasError ? (
+                  {!hasError && actImgUrl ? (
                     <img
-                      src={activity.imageUrl}
+                      key={actImgUrl}
+                      src={actImgUrl}
                       alt={activity.titleAr}
                       referrerPolicy="no-referrer"
-                      onError={() =>
-                        setFailedImages((prev) => ({ ...prev, [activity.id]: true }))
-                      }
+                      onLoad={() => {
+                        if (failedImages[actImgUrl]) {
+                          setFailedImages((prev) => {
+                            const copy = { ...prev };
+                            delete copy[actImgUrl];
+                            return copy;
+                          });
+                        }
+                      }}
+                      onError={() => {
+                        if (!isDataUrl) {
+                          setFailedImages((prev) => ({ ...prev, [actImgUrl]: true }));
+                        }
+                      }}
                       className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 ease-out"
                     />
                   ) : (

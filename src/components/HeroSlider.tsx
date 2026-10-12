@@ -71,7 +71,9 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({ banners, onNavigate }) =
     return null;
   }
 
-  const imageFailed = failedImages[activeSlide.id];
+  const currentImageUrl = activeSlide.imageUrl || '';
+  const isDataUrl = currentImageUrl.startsWith('data:');
+  const imageFailed = !isDataUrl && Boolean(failedImages[currentImageUrl]);
 
   return (
     <section
@@ -91,19 +93,30 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({ banners, onNavigate }) =
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
-        {/* Background Media with Zero-Broken-Image Fallback */}
+        {/* Background Media with Direct Instant Display & Fallback */}
         <div className="absolute inset-0 z-0 overflow-hidden bg-[#0B0F1F]">
-          {!imageFailed && activeSlide.imageUrl ? (
+          {!imageFailed && currentImageUrl ? (
             <img
-              key={activeSlide.imageUrl}
-              src={activeSlide.imageUrl}
+              key={currentImageUrl}
+              src={currentImageUrl}
               alt={activeSlide.titleAr}
               referrerPolicy="no-referrer"
               draggable={false}
-              onError={() =>
-                setFailedImages((prev) => ({ ...prev, [activeSlide.id]: true }))
-              }
-              className="w-full h-full object-cover object-center scale-105 transition-transform duration-700 ease-out opacity-65"
+              onLoad={() => {
+                if (failedImages[currentImageUrl]) {
+                  setFailedImages((prev) => {
+                    const copy = { ...prev };
+                    delete copy[currentImageUrl];
+                    return copy;
+                  });
+                }
+              }}
+              onError={() => {
+                if (!isDataUrl) {
+                  setFailedImages((prev) => ({ ...prev, [currentImageUrl]: true }));
+                }
+              }}
+              className="w-full h-full object-cover object-center scale-105 transition-transform duration-700 ease-out opacity-75"
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-[#0F172A] via-[#1E1B4B] to-[#070913] flex items-center justify-center">

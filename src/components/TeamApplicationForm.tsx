@@ -17,19 +17,25 @@ import {
   Users2,
   Clock,
   HelpCircle,
-  Info
+  Info,
+  Copy,
+  ExternalLink,
+  Search
 } from 'lucide-react';
 import { RoleId, TeamApplication, RegistrationTrack } from '../types';
 import { ROLES_LIST, COUNTRY_CODES, BUSINESS_ACTIVITIES } from '../data/initialData';
+import { processImageFile } from '../utils/imageUtils';
 
 interface TeamApplicationFormProps {
   preselectedRole?: RoleId | null;
   onSubmitApplication: (app: Omit<TeamApplication, 'id' | 'status' | 'submittedAt'>) => void;
+  onOpenSearchModal?: (code: string) => void;
 }
 
 export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
   preselectedRole,
-  onSubmitApplication
+  onSubmitApplication,
+  onOpenSearchModal
 }) => {
   // Dual registration track: 'official' (100% fast track) vs 'quick' (50% probability)
   const [track, setTrack] = useState<RegistrationTrack>('official');
@@ -66,6 +72,8 @@ export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
   const [roleLimitNotice, setRoleLimitNotice] = useState<string | null>(null);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [lastSubmittedTrack, setLastSubmittedTrack] = useState<RegistrationTrack>('official');
+  const [lastGeneratedCode, setLastGeneratedCode] = useState<string>('');
+  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     if (preselectedRole) {
@@ -145,23 +153,22 @@ export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
     }
   };
 
-  const handleImageUpload = (
+  const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     type: 'front' | 'back'
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        if (type === 'front') {
-          setIdFrontImage(reader.result);
-        } else {
-          setIdBackImage(reader.result);
-        }
+    try {
+      const dataUrl = await processImageFile(file);
+      if (type === 'front') {
+        setIdFrontImage(dataUrl);
+      } else {
+        setIdBackImage(dataUrl);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Failed to process ID image:', err);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -237,6 +244,9 @@ export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
 
     const normalizedDigits = phoneNumber.replace(/\s+/g, '').replace(/^0+/, '');
     const cleanWhatsapp = whatsappPhone.trim() ? whatsappPhone.trim() : `${countryCode} ${normalizedDigits}`;
+
+    const generatedCode = `VBR-${Math.floor(1000 + Math.random() * 9000)}-${track === 'official' ? 'OFF' : 'QCK'}`;
+    setLastGeneratedCode(generatedCode);
 
     onSubmitApplication({
       registrationTrack: track,
@@ -414,6 +424,56 @@ export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
                 </span>
               </div>
 
+              {/* MANDATORY TRACKING CODE SECTION AS REQUESTED */}
+              <div className="p-4 rounded-2xl bg-[#090D1A] border-2 border-emerald-500/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400">
+                    كود التتبع والانضمام الخاص بك (إلزامي الاحتفاظ به):
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    استخدم هذا الكود للبحث في الشريط العلوي لمعرفة قبولك
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 bg-[#070913] p-3 rounded-xl border border-slate-700">
+                  <span className="text-base sm:text-lg font-mono-num font-extrabold text-amber-300 tracking-wider" dir="ltr">
+                    {lastGeneratedCode || 'VBR-REG-ACTIVE'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastGeneratedCode || 'VBR-REG-ACTIVE');
+                        setCopiedCode(true);
+                        setTimeout(() => setCopiedCode(false), 2500);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedCode ? 'تم النسخ بنجاح' : 'نسخ الكود'}</span>
+                    </button>
+
+                    {onOpenSearchModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubmittedSuccess(false);
+                          onOpenSearchModal(lastGeneratedCode);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Search className="w-3.5 h-3.5 text-amber-400" />
+                        <span>التحقق عبر البحث</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  * <strong>تنبيه هام جداً:</strong> يلزمك نسخ هذا الكود والاحتفاظ به، لأن هذا الكود هو الوسيلة الوحيدة للبحث في شريط البحث بالأعلى لمعرفة هل تم قبول طلبك، أو قيد الانتظار، أو تم رفضه.
+                </p>
+              </div>
+
               {/* Exact Warning & Assurance Text Requested by User */}
               <div className="p-5 rounded-2xl bg-[#090D1A] border border-amber-500/40 space-y-3">
                 <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
@@ -443,24 +503,36 @@ export const TeamApplicationForm: React.FC<TeamApplicationFormProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              {/* Action Buttons with Official Numbers */}
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
                 <a
-                  href="https://wa.me/201200125746"
+                  href="https://wa.me/201065874461?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%A5%D8%AF%D8%A7%D8%B1%D8%A9%20Vibers%20V%20%D8%A7%D9%84%D8%B9%D9%84%D9%8A%D8%A7%D8%8C%20%D9%82%D9%85%D8%AA%20%D8%A8%D8%AA%D9%82%D8%AF%D9%8A%D9%85%20%D8%B7%D9%84%D8%A8%20%D8%A7%D9%86%D8%B6%D9%85%D8%A7%D9%85"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full sm:flex-1 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer text-center"
+                  className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer text-center shadow-lg shadow-emerald-950/40"
+                  title="الخط الرسمي الأول المباشر"
                 >
-                  <Phone className="w-4 h-4" />
-                  <span>التواصل المباشر مع الإدارة العليا (واتساب)</span>
+                  <Phone className="w-4 h-4 shrink-0" />
+                  <span>الخط الرسمي 1: +201065874461</span>
+                </a>
+
+                <a
+                  href="https://wa.me/201066934250?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D9%8B%20%D8%AE%D8%B7%20%D8%AF%D8%B9%D9%85%20Vibers%20V%D8%8C%20%D9%82%D9%85%D8%AA%20%D8%A8%D8%AA%D9%82%D8%AF%D9%8A%D9%85%20%D8%B7%D9%84%D8%A8%20%D8%A7%D9%86%D8%B6%D9%85%D8%A7%D9%85"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-slate-800 hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-emerald-500/30 transition-colors cursor-pointer text-center"
+                  title="الخط الرسمي الثاني للدعم والشكاوى"
+                >
+                  <Phone className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>الخط الرسمي 2: +201066934250</span>
                 </a>
 
                 <button
                   type="button"
                   onClick={() => setSubmittedSuccess(false)}
-                  className="w-full sm:w-auto py-3 px-6 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm transition-colors cursor-pointer"
+                  className="w-full sm:w-auto py-3 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs sm:text-sm transition-colors cursor-pointer border border-slate-800"
                 >
-                  حسناً، فهمت التعليمات (إغلاق)
+                  إغلاق
                 </button>
               </div>
             </div>

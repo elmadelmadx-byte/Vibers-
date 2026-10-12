@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Image as ImageIcon,
   MessageSquareWarning,
   Users,
+  Unlock,
   Check,
   XCircle,
   Trash2,
@@ -34,7 +35,11 @@ import {
   Bell,
   Radio,
   ImagePlus,
-  Send
+  Send,
+  Phone,
+  MessageCircle,
+  ExternalLink,
+  MessageSquare
 } from 'lucide-react';
 import {
   BannerSlide,
@@ -46,9 +51,13 @@ import {
   SubAdminPermissions,
   RoleId,
   ActivityShowcase,
-  BroadcastNotification
+  BroadcastNotification,
+  ContactChannel,
+  SupportTicket,
+  TrashedApplication
 } from '../types';
 import { ROLES_LIST } from '../data/initialData';
+import { processImageFile } from '../utils/imageUtils';
 
 interface AdminDashboardModalProps {
   isOpen: boolean;
@@ -83,6 +92,20 @@ interface AdminDashboardModalProps {
   onCreateSubAdmin: (sub: Omit<SubAdminAccount, 'id' | 'createdAt'>) => void;
   onDeleteSubAdmin: (id: string) => void;
   dailyActiveLogins?: number;
+  contactChannels: ContactChannel[];
+  onUpdateContactChannels: (channels: ContactChannel[]) => void;
+  tickets: SupportTicket[];
+  onUpdateTicketStatus: (id: string, status: SupportTicket['status'], adminReply?: string) => void;
+  onDeleteTicket: (id: string) => void;
+  isRatingsLocked: boolean;
+  onToggleRatingsLock: (locked: boolean) => void;
+  trashedApplications: TrashedApplication[];
+  onTrashApplication: (id: string, reason?: string) => void;
+  onTrashInactiveApplications: () => void;
+  onRestoreTrashedApplication: (id: string) => void;
+  onRestoreAllTrashed?: () => void;
+  onDeleteTrashedPermanently: (id: string) => void;
+  onEmptyTrash: () => void;
 }
 
 export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
@@ -112,15 +135,48 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   subAdmins,
   onCreateSubAdmin,
   onDeleteSubAdmin,
-  dailyActiveLogins = 3420
+  dailyActiveLogins = 3420,
+  contactChannels,
+  onUpdateContactChannels,
+  tickets,
+  onUpdateTicketStatus,
+  onDeleteTicket,
+  isRatingsLocked,
+  onToggleRatingsLock,
+  trashedApplications,
+  onTrashApplication,
+  onTrashInactiveApplications,
+  onRestoreTrashedApplication,
+  onRestoreAllTrashed,
+  onDeleteTrashedPermanently,
+  onEmptyTrash
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'applications' | 'comments' | 'sub_admins' | 'banners' | 'activities' | 'notifications' | 'card_customizer'
+    'applications' | 'comments' | 'sub_admins' | 'banners' | 'activities' | 'notifications' | 'card_customizer' | 'contact_channels' | 'support_tickets' | 'trash'
   >('applications');
+
+  // Contact Channels editable draft
+  const [editableChannels, setEditableChannels] = useState<ContactChannel[]>(contactChannels);
+  const [channelFeedback, setChannelFeedback] = useState<string | null>(null);
+  const [newChannelType, setNewChannelType] = useState<'whatsapp' | 'email' | 'phone'>('whatsapp');
+  const [newChannelLabel, setNewChannelLabel] = useState('');
+  const [newChannelValue, setNewChannelValue] = useState('');
+  const [newChannelDesc, setNewChannelDesc] = useState('');
+
+  // Ticket reply draft
+  const [ticketReplyText, setTicketReplyText] = useState<Record<string, string>>({});
 
   // Activities customization state
   const [editableActivities, setEditableActivities] = useState<ActivityShowcase[]>(activities);
   const [activityFeedback, setActivityFeedback] = useState<string | null>(null);
+
+  // New Activity State (Directly adding new activities with image and text)
+  const [newActivityTitle, setNewActivityTitle] = useState('');
+  const [newActivityTitleEn, setNewActivityTitleEn] = useState('OFFICIAL ENTERPRISE ACTIVITY');
+  const [newActivityCategory, setNewActivityCategory] = useState('أنشطة وقطاعات العمل');
+  const [newActivityDescription, setNewActivityDescription] = useState('');
+  const [newActivityMetrics, setNewActivityMetrics] = useState('+100% كفاءة تشغيلية');
+  const [newActivityImageUrl, setNewActivityImageUrl] = useState('');
 
   // Broadcast state
   const [broadcastTitle, setBroadcastTitle] = useState('');
@@ -170,9 +226,40 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     canDeleteReviews: false,
     canEditBanners: false,
     canViewStatsOnly: false,
-    canEvaluateCandidates: true
+    canEvaluateCandidates: true,
+    canToggleRatingsLock: false,
+    canManageTrash: true
   });
   const [subAdminFeedback, setSubAdminFeedback] = useState<string | null>(null);
+  const [trashFeedback, setTrashFeedback] = useState<string | null>(null);
+  const [trashSearchQuery, setTrashSearchQuery] = useState('');
+
+  const handleTrashCandidate = (id: string, reason?: string, name?: string) => {
+    onTrashApplication(id, reason);
+    setTrashFeedback(
+      `تم نقل بيانات ${name ? `المتقدم (${name})` : 'المستخدم'} إلى سلة المهملات في الأعلى بنجاح. يمكنك استرجاعه في أي وقت.`
+    );
+    setTimeout(() => setTrashFeedback(null), 5000);
+  };
+
+  const handleRestoreCandidate = (id: string, name?: string) => {
+    onRestoreTrashedApplication(id);
+    setTrashFeedback(
+      `تم استرجاع بيانات ${name ? `المتقدم (${name})` : 'المستخدم'} بنجاح ليظهر الآن فوراً وسط المتقدمين النشطين!`
+    );
+    setTimeout(() => setTrashFeedback(null), 5000);
+  };
+
+  // Lock outer background body scroll while manager dashboard is active
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -183,36 +270,86 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     return found ? found.titleAr : roleId;
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, targetBannerId?: string) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetBannerId?: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        if (targetBannerId) {
-          onUpdateBanner(targetBannerId, { imageUrl: reader.result });
-          setBannerFeedback('تم تحديث صورة البنر بنجاح وبشكل دائم!');
-        } else {
-          setNewBannerImageUrl(reader.result);
-        }
+    try {
+      setBannerFeedback('جاري معالجة وتجهيز الصورة للعرض المباشر...');
+      const dataUrl = await processImageFile(file);
+      if (targetBannerId) {
+        onUpdateBanner(targetBannerId, { imageUrl: dataUrl });
+        setBannerFeedback('تم تحديث صورة البنر بنجاح وتظهر الآن مباشرة في الموقع!');
+        setTimeout(() => setBannerFeedback(null), 4000);
+      } else {
+        setNewBannerImageUrl(dataUrl);
+        setBannerFeedback('تم تجهيز الصورة بنجاح! تظهر الآن مباشرة في المعاينة الحية بالأسفل.');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      setBannerFeedback(err.message || 'فشل تحميل ملف الصورة');
+    }
   };
 
-  const handleActivityImageUpload = (e: React.ChangeEvent<HTMLInputElement>, activityId: string) => {
+  const handleActivityImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, activityId?: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        const res = reader.result;
-        setEditableActivities((prev) =>
-          prev.map((act) => (act.id === activityId ? { ...act, imageUrl: res } : act))
+    try {
+      setActivityFeedback('جاري معالجة وتجهيز الصورة للعرض المباشر...');
+      const dataUrl = await processImageFile(file);
+      if (activityId) {
+        const updated = editableActivities.map((act) =>
+          act.id === activityId ? { ...act, imageUrl: dataUrl } : act
         );
+        setEditableActivities(updated);
+        onUpdateActivities(updated);
+        setActivityFeedback('تم تحديث وتثبيت صورة النشاط بنجاح وتظهر الآن مباشرة في واجهة الموقع!');
+        setTimeout(() => setActivityFeedback(null), 4000);
+      } else {
+        setNewActivityImageUrl(dataUrl);
+        setActivityFeedback('تم تجهيز الصورة بنجاح وتظهر الآن في المعاينة المباشرة للنشاط!');
       }
+    } catch (err: any) {
+      setActivityFeedback(err.message || 'فشل تحميل ملف الصورة');
+    }
+  };
+
+  const handleCreateActivity = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newActivityTitle.trim() || !newActivityImageUrl.trim()) {
+      setActivityFeedback('يرجى إدخال عنوان النشاط ورفع صورة أو وضع رابط الصورة.');
+      return;
+    }
+    const created: ActivityShowcase = {
+      id: `act-${Date.now()}`,
+      numberIndex: String(editableActivities.length + 1).padStart(2, '0'),
+      titleAr: newActivityTitle.trim(),
+      titleEn: newActivityTitleEn.trim() || 'ENTERPRISE ACTIVITY',
+      categoryAr: newActivityCategory.trim() || 'أنشطة وقطاعات العمل',
+      descriptionAr:
+        newActivityDescription.trim() ||
+        'نشاط رسمي معتمد ومحدث من إدارة Vibers V العليا.',
+      metricsAr: newActivityMetrics.trim() || '+100% كفاءة تشغيلية',
+      imageUrl: newActivityImageUrl.trim()
     };
-    reader.readAsDataURL(file);
+    const updated = [...editableActivities, created];
+    setEditableActivities(updated);
+    onUpdateActivities(updated);
+    setNewActivityTitle('');
+    setNewActivityDescription('');
+    setNewActivityImageUrl('');
+    setActivityFeedback('تمت إضافة النشاط وتثبيت الصورة والنصوص في واجهة الموقع بنجاح!');
+    setTimeout(() => setActivityFeedback(null), 4000);
+  };
+
+  const handleDeleteActivity = (id: string) => {
+    if (editableActivities.length <= 1) {
+      setActivityFeedback('يجب الإبقاء على نشاط واحد على الأقل في واجهة الموقع.');
+      return;
+    }
+    const updated = editableActivities.filter((a) => a.id !== id);
+    setEditableActivities(updated);
+    onUpdateActivities(updated);
+    setActivityFeedback('تم حذف النشاط بنجاح من واجهة الموقع!');
+    setTimeout(() => setActivityFeedback(null), 3000);
   };
 
   const handleSaveActivities = () => {
@@ -372,16 +509,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-[#060812] flex flex-col overflow-hidden select-text text-right"
       role="dialog"
       aria-modal="true"
       aria-label="لوحة تحكم المسؤول الشاملة"
+      style={{ touchAction: 'pan-y' }}
     >
-      <div className="w-full max-w-7xl bg-[#090D1A] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+      <div className="w-full h-full bg-[#070914] flex flex-col overflow-hidden">
         {/* Top Header */}
-        <div className="px-6 py-4 bg-[#0F1424] border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div className="px-6 py-3.5 bg-[#0D1222] border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-md">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shrink-0 shadow-inner">
               <ShieldCheck className="w-5 h-5 text-amber-400" />
             </div>
             <div>
@@ -403,11 +541,37 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            {/* Dedicated Top Trash Can Button (Directly requested: تظهر في لوحة المدير في الأعلى) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('trash')}
+              className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                activeTab === 'trash'
+                  ? 'bg-rose-600 border-rose-400 text-white shadow-rose-950/50 ring-2 ring-rose-400/50'
+                  : trashedApplications.length > 0
+                  ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-500/50 text-rose-200 hover:text-white ring-1 ring-rose-500/30'
+                  : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title="سلة المهملات والمحذوفات واسترجاع البيانات"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span>سلة المهملات</span>
+              {trashedApplications.length > 0 ? (
+                <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white font-mono-num text-[11px] font-extrabold animate-pulse shadow-md">
+                  {trashedApplications.length}
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono-num text-[10px]">
+                  0
+                </span>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={onLogout}
-              className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span>تسجيل الخروج</span>
@@ -422,6 +586,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Real-Time Trash & Restore Instant Feedback Alert */}
+        {trashFeedback && (
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 px-6 py-2.5 text-xs text-white font-bold flex items-center justify-between gap-4 animate-in slide-in-from-top duration-200 shrink-0 shadow-md">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-200" />
+              <span>{trashFeedback}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTrashFeedback(null)}
+              className="text-white hover:text-slate-200 text-xs cursor-pointer px-2 py-0.5 rounded bg-black/20"
+              title="إغلاق التنبيه"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Top Live Role Cards Bar (Directly requested: Cards for shipping agent, host agent, super admin, admin, BD) */}
         <div className="px-6 py-3 bg-[#0B0F1C] border-b border-slate-800/80">
@@ -658,6 +840,60 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <Bell className="w-4 h-4" />
             <span>مركز الإشعارات وبث الترحيب ({notifications.length})</span>
           </button>
+
+          {/* Contact Numbers & Channels Management Tab */}
+          {(session.isGeneralManager || permissions.canEditBanners) && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('contact_channels')}
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors cursor-pointer ${
+                activeTab === 'contact_channels'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#0F1424] text-slate-300 hover:text-white border border-slate-800'
+              }`}
+            >
+              <Phone className="w-4 h-4" />
+              <span>إدارة أرقام الواتساب والتواصل ({contactChannels.length})</span>
+            </button>
+          )}
+
+          {/* Support Tickets & Customer Grievances Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('support_tickets')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors cursor-pointer ${
+              activeTab === 'support_tickets'
+                ? 'bg-amber-600 text-white'
+                : 'bg-[#0F1424] text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>شكاوى واستفسارات المستخدمين ({tickets.length})</span>
+            {tickets.filter((t) => t.status === 'new').length > 0 && (
+              <span className="px-2 py-0.5 rounded-md bg-rose-500 text-white font-mono-num text-xs font-bold animate-pulse">
+                {tickets.filter((t) => t.status === 'new').length} جديدة
+              </span>
+            )}
+          </button>
+
+          {/* Recycle Bin / Trash Can Tab (Requested by user) */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('trash')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-colors cursor-pointer ${
+              activeTab === 'trash'
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-950/40'
+                : 'bg-[#0F1424] text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <span>سلة المهملات والمحذوفات</span>
+            {trashedApplications.length > 0 && (
+              <span className="px-2 py-0.5 rounded-md bg-rose-500 text-white font-mono-num text-xs font-bold animate-pulse">
+                {trashedApplications.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Tab Viewport */}
@@ -665,30 +901,50 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {/* TAB 1: APPLICATIONS & COLLABORATION REQUESTS */}
           {activeTab === 'applications' && (
             <div className="space-y-6">
-              <div className="flex flex-wrap items-center gap-1.5 bg-[#0F1424] p-1.5 rounded-xl border border-slate-800">
-                {[
-                  { key: 'all', label: 'الكل' },
-                  { key: 'official', label: 'التسجيل الرسمي (100%)' },
-                  { key: 'quick', label: 'التسجيل الفرعي (50%)' },
-                  { key: 'pending', label: 'قيد المراجعة' },
-                  { key: 'approved', label: 'المعتمدون (Approved)' },
-                  { key: 'waitlist', label: 'قائمة الانتظار (Waitlist)' },
-                  { key: 'rejected', label: 'المرفوضون (Rejected)' },
-                  { key: 'banned', label: 'المحظورون (Banned)' }
-                ].map((item) => (
+              {/* Filter Bar & Quick Move-to-Trash Action */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5 bg-[#0F1424] p-1.5 rounded-xl border border-slate-800 flex-1">
+                  {[
+                    { key: 'all', label: 'الكل' },
+                    { key: 'official', label: 'التسجيل الرسمي (100%)' },
+                    { key: 'quick', label: 'التسجيل الفرعي (50%)' },
+                    { key: 'pending', label: 'قيد المراجعة' },
+                    { key: 'approved', label: 'المعتمدون (Approved)' },
+                    { key: 'waitlist', label: 'قائمة الانتظار (Waitlist)' },
+                    { key: 'rejected', label: 'المرفوضون (Rejected)' },
+                    { key: 'banned', label: 'المحظورون (Banned)' }
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setStatusFilter(item.key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                        statusFilter === item.key
+                          ? 'bg-blue-600 text-white'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Bulk Move Inactive / Rejected to Trash button */}
+                {applications.some((a) => a.status === 'rejected' || a.status === 'waitlist' || a.status === 'banned') && (
                   <button
-                    key={item.key}
                     type="button"
-                    onClick={() => setStatusFilter(item.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                      statusFilter === item.key
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
+                    onClick={onTrashInactiveApplications}
+                    className="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shrink-0 whitespace-nowrap active:scale-95"
+                    title="نقل كافة المرفوضين وقائمة الانتظار والمحظورين إلى سلة المهملات مع إمكانية استرجاعهم"
                   >
-                    {item.label}
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>
+                      نقل المرفوضين وغير النشطين إلى سلة المهملات (
+                      {applications.filter((a) => a.status === 'rejected' || a.status === 'waitlist' || a.status === 'banned').length}
+                      )
+                    </span>
                   </button>
-                ))}
+                )}
               </div>
 
               {filteredApplications.length === 0 ? (
@@ -718,6 +974,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           <div className="flex flex-wrap items-center gap-3">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                               <span>{app.realFullName}</span>
+                              <button
+                                type="button"
+                                onClick={() => openApplicantDetail(app)}
+                                className="p-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-white cursor-pointer transition-colors"
+                                title="رؤية ومعاينة تفاصيل ووثائق المتقدم"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
                               <span className="text-xs text-amber-400 font-normal">
                                 (اللقب: {app.nickname})
                               </span>
@@ -814,13 +1078,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                         {/* Allowed Actions based on permissions */}
                         <div className="flex flex-wrap lg:flex-col items-stretch gap-2.5 shrink-0 w-full lg:w-auto">
+                          {/* Dedicated View/Eye Inspection Button (Direct user requirement: إضافة أيقونات الرؤية إلى المتقدمين) */}
                           <button
                             type="button"
                             onClick={() => openApplicantDetail(app)}
-                            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-900/40 to-blue-900/40 hover:from-cyan-800/60 hover:to-blue-800/60 border border-cyan-500/40 text-cyan-200 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
+                            title="رؤية ومعاينة وتدقيق كافة بيانات وهوية المتقدم"
                           >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>عرض وتعديل التفاصيل</span>
+                            <Eye className="w-4 h-4 text-cyan-400" />
+                            <span>رؤية ومعاينة الملف الكامل</span>
                           </button>
 
                           {(session.isGeneralManager || permissions.canApproveApplicants) && (
@@ -852,6 +1118,28 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                               <span>رفض الطلب (Reject)</span>
                             </button>
                           )}
+
+                          {/* Move to Trash Button (Direct user requirement: حذف بيانات أي مستخدم مرفوض أو غير نشط ونقلها لسلة المهملات) */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onTrashApplication(
+                                app.id,
+                                app.status === 'rejected'
+                                  ? 'مرفوض بقرار الإدارة'
+                                  : app.status === 'banned'
+                                  ? 'محظور من المنظومة'
+                                  : app.status === 'waitlist'
+                                  ? 'قائمة الانتظار (غير نشط)'
+                                  : 'نقل إلى سلة المهملات'
+                              )
+                            }
+                            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-800 hover:border-rose-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+                            title="إزالة بيانات هذا المستخدم ونقلها إلى سلة المهملات مع إمكانية استرجاعها"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>نقل لسلة المهملات</span>
+                          </button>
 
                           {(session.isGeneralManager || permissions.canBanUsers) && (
                             app.status === 'banned' ? (
@@ -898,6 +1186,114 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </div>
                 <div className="text-xs font-mono-num bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 text-amber-400 font-bold shrink-0">
                   إجمالي التقييمات: {comments.length} تقييم
+                </div>
+              </div>
+
+              {/* SPECIAL EXECUTIVE RATINGS LOCK / UNLOCK CONTROLLER (Directly requested by user) */}
+              <div
+                className={`p-5 rounded-2xl border transition-all ${
+                  isRatingsLocked
+                    ? 'bg-gradient-to-r from-amber-950/30 via-[#0F1424] to-red-950/20 border-amber-500/50 shadow-xl shadow-amber-950/20'
+                    : 'bg-gradient-to-r from-emerald-950/20 via-[#0F1424] to-blue-950/20 border-emerald-500/40 shadow-xl shadow-emerald-950/20'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          isRatingsLocked
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        }`}
+                      >
+                        {isRatingsLocked ? (
+                          <Lock className="w-5 h-5 animate-pulse" />
+                        ) : (
+                          <Unlock className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-base font-bold text-white">
+                            التحكم في قفل وفتح عرض التقييمات للمنصة
+                          </h4>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                              isRatingsLocked
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            }`}
+                          >
+                            {isRatingsLocked ? '🔒 مقفلة حالياً' : '🟢 مفتوحة للعامة'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          خاصية إدارية خاصة تسمح لك بالتحكم فيما يراه الزوار في واجهة الموقع العامة.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                      {isRatingsLocked ? (
+                        <div className="space-y-1">
+                          <div className="text-amber-400 font-bold flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>الوضع المطبق الآن: التقييمات مقفلة ومحمية</span>
+                          </div>
+                          <p className="text-slate-300">
+                            يظهر لزوار المنصة حالياً <strong className="text-white">إجمالي عدد التقييمات ({comments.length})</strong> و<strong className="text-blue-300">عدد المقيمين فقط</strong> والمتوسط العام، بينما <strong className="text-amber-300">تُحجب تماماً هويات وأسماء وتفاصيل من قام بالتقييم</strong> لمنع المنافسة ولحماية خصوصية الأعضاء.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                            <Unlock className="w-3.5 h-3.5" />
+                            <span>الوضع المطبق الآن: التقييمات مفتوحة للعامة</span>
+                          </div>
+                          <p className="text-slate-300">
+                            يظهر لجميع الزوار أسماء المقيمين والنجوم وبطاقات الآراء كاملة في الموقع العام.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Toggle Action */}
+                  <div className="shrink-0 w-full lg:w-auto flex flex-col items-stretch lg:items-end gap-2">
+                    {session.isGeneralManager || permissions.canToggleRatingsLock ? (
+                      <button
+                        type="button"
+                        onClick={() => onToggleRatingsLock(!isRatingsLocked)}
+                        className={`w-full lg:w-auto px-6 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95 ${
+                          isRatingsLocked
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40 border border-emerald-400/30'
+                            : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 shadow-amber-900/40 border border-amber-400/40'
+                        }`}
+                      >
+                        {isRatingsLocked ? (
+                          <>
+                            <Unlock className="w-4 h-4" />
+                            <span>فتح عرض التقييمات للعامة (إظهار الأسماء)</span>
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="w-4 h-4" />
+                            <span>قفل عرض التقييمات (إظهار الأعداد فقط)</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="text-xs text-slate-400 bg-slate-900/90 px-4 py-2.5 rounded-xl border border-slate-800 text-center">
+                        🔒 مطلوب إذن قفل/فتح التقييمات من المدير العام عيون Prince
+                      </div>
+                    )}
+                    <span className="text-[11px] text-slate-500 text-center lg:text-right">
+                      {isRatingsLocked
+                        ? 'الضغط هنا سيعيد إظهار أسماء المقيمين للعامة فوراً'
+                        : 'الضغط هنا سيحجب الأسماء فوراً ويُبقي الأعداد فقط'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -981,10 +1377,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             ))}
                           </div>
 
-                          {/* Text comment body (Shown only here in manager panel) */}
-                          <div className="bg-[#070913] p-4 rounded-xl border border-slate-800">
-                            <span className="text-[11px] text-slate-500 block mb-1">نص التعليق الخاص:</span>
+                          {/* Text comment body (Shown in manager panel) */}
+                          <div className="bg-[#070913] p-4 rounded-xl border border-slate-800 space-y-2">
+                            <span className="text-[11px] text-slate-500 block">نص التقييم الكتابي:</span>
                             <p className="text-sm text-slate-200 leading-relaxed">{c.comment}</p>
+                            {c.imageUrl && (
+                              <div className="pt-2 border-t border-slate-800/80">
+                                <span className="text-[11px] text-amber-400 font-semibold block mb-1">
+                                  الصورة المرفقة مع التقييم (عرض مباشر):
+                                </span>
+                                <div className="relative rounded-lg overflow-hidden border border-slate-700 bg-black max-w-sm max-h-48 aspect-video">
+                                  <img
+                                    src={c.imageUrl}
+                                    alt={`مرفق من ${c.authorName}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1173,6 +1583,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       />
                       <span>صلاحية تعديل وإدارة صور ونصوص البنر</span>
                     </label>
+
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newSubPermissions.canToggleRatingsLock || false}
+                        onChange={(e) =>
+                          setNewSubPermissions((p) => ({ ...p, canToggleRatingsLock: e.target.checked }))
+                        }
+                        className="w-4 h-4 rounded text-purple-600 cursor-pointer"
+                      />
+                      <span className="text-purple-300 font-semibold">صلاحية قفل وفتح عرض التقييمات للمنصة (التحكم بالخصوصية)</span>
+                    </label>
                   </div>
                 </div>
 
@@ -1242,6 +1664,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         </span>
                         <span className={`px-2 py-0.5 rounded ${sub.permissions.canEditBanners ? 'bg-blue-950 text-blue-400' : 'bg-slate-900 text-slate-500 line-through'}`}>
                           تعديل البنر
+                        </span>
+                        <span className={`px-2 py-0.5 rounded ${sub.permissions.canToggleRatingsLock ? 'bg-purple-950 text-purple-400' : 'bg-slate-900 text-slate-500 line-through'}`}>
+                          قفل/فتح التقييمات
                         </span>
                       </div>
                     </div>
@@ -1315,9 +1740,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <label className="block text-xs font-semibold text-slate-300">
                     رفع صورة من الجهاز أو رابط مباشر <span className="text-amber-400">*</span>
                   </label>
-                  <label className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl border border-dashed border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10 text-blue-300 text-xs font-semibold cursor-pointer transition-colors">
-                    <Upload className="w-4 h-4" />
-                    <span>اختر ملف صورة من الجهاز</span>
+                  <label className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl border border-dashed border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/15 text-blue-300 text-xs font-semibold cursor-pointer transition-colors shadow-inner">
+                    <Upload className="w-4 h-4 text-blue-400" />
+                    <span>اختر ملف صورة من الجهاز (تظهر مباشرة فوراً)</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1330,20 +1755,56 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     dir="ltr"
                     value={newBannerImageUrl}
                     onChange={(e) => setNewBannerImageUrl(e.target.value)}
-                    placeholder="أو الصق رابط الصورة المباشر..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                    placeholder="أو الصق رابط الصورة المباشر هنا..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
                   />
+
+                  {/* Direct Live Preview Box for Banner */}
+                  {newBannerImageUrl && (
+                    <div className="space-y-1.5 p-3 rounded-xl bg-[#070913] border border-blue-500/40 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between text-[11px] text-blue-300 font-bold mb-1">
+                        <span className="flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-blue-400" />
+                          <span>معاينة حية ومباشرة للبنر (صورة + نصوص):</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setNewBannerImageUrl('')}
+                          className="text-rose-400 hover:text-rose-300 text-[10px] font-semibold cursor-pointer"
+                        >
+                          إزالة الصورة ✕
+                        </button>
+                      </div>
+                      <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-black">
+                        <img
+                          key={newBannerImageUrl}
+                          src={newBannerImageUrl}
+                          alt="معاينة البنر المباشرة"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#070913] via-[#070913]/60 to-transparent p-3 flex flex-col justify-end text-right">
+                          <span className="text-[10px] text-amber-400 font-bold">{newBannerKicker || 'VIBERS V'}</span>
+                          <h4 className="text-xs sm:text-sm font-bold text-white line-clamp-1">{newBannerTitle || 'عنوان الشريحة الجديد'}</h4>
+                          <p className="text-[10px] text-slate-300 line-clamp-1">{newBannerSubtitle || 'الوصف المعروض في البنر...'}</p>
+                          <span className="text-[10px] text-blue-300 font-mono-num">{newBannerStats}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {bannerFeedback && (
-                  <p className="text-xs text-emerald-400 font-medium">{bannerFeedback}</p>
+                  <p className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{bannerFeedback}</span>
+                  </p>
                 )}
 
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer"
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer shadow-lg shadow-blue-600/20 active:scale-95"
                 >
-                  تثبيت الشريحة في الصفحة الرئيسية
+                  تثبيت الشريحة في الصفحة الرئيسية مباشرة
                 </button>
               </form>
 
@@ -1356,7 +1817,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 {banners.map((b, index) => (
                   <div
                     key={b.id}
-                    className="p-5 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4"
+                    className="p-5 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4 shadow-md"
                   >
                     {editingBannerId === b.id ? (
                       /* Banner Inline Editor */
@@ -1405,22 +1866,56 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           />
                         </div>
 
-                        <input
-                          type="text"
-                          dir="ltr"
-                          value={editBannerImageUrl}
-                          onChange={(e) => setEditBannerImageUrl(e.target.value)}
-                          placeholder="رابط الصورة..."
-                          className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-700 text-xs text-white font-mono-num"
-                        />
+                        <div className="space-y-1.5">
+                          <label className="block text-[11px] text-slate-300 font-semibold">
+                            صورة الشريحة (رفع مباشر أو رابط):
+                          </label>
+                          <div className="flex gap-2">
+                            <label className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-dashed border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10 text-blue-300 text-xs font-semibold cursor-pointer shrink-0">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>رفع بديل من الجهاز</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const url = await processImageFile(file);
+                                    setEditBannerImageUrl(url);
+                                  }
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                            <input
+                              type="text"
+                              dir="ltr"
+                              value={editBannerImageUrl}
+                              onChange={(e) => setEditBannerImageUrl(e.target.value)}
+                              placeholder="رابط الصورة..."
+                              className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-700 text-xs text-white font-mono-num"
+                            />
+                          </div>
 
-                        <div className="flex justify-end gap-2">
+                          {editBannerImageUrl && (
+                            <div className="relative aspect-video max-h-36 rounded-lg overflow-hidden border border-slate-700 bg-black mt-2">
+                              <img
+                                key={editBannerImageUrl}
+                                src={editBannerImageUrl}
+                                alt="معاينة الصورة المعدلة"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
                           <button
                             type="button"
                             onClick={() => saveEditedBanner(b.id)}
-                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-md"
                           >
-                            حفظ وتثبيت التعديل
+                            حفظ وتثبيت التعديل في الموقع مباشرة
                           </button>
                         </div>
                       </div>
@@ -1596,145 +2091,338 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {/* TAB 5: ACTIVITIES & PHOTOS CUSTOMIZATION (Full Control over Current Images & Content) */}
           {activeTab === 'activities' && (
             <div className="space-y-6">
-              <div className="p-4 rounded-2xl bg-[#0F1424] border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="p-4 rounded-2xl bg-[#0F1424] border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <ImagePlus className="w-5 h-5 text-amber-400" />
-                    <span>التحكم الشامل في أنشطة الشركة وصور العرض الحالية</span>
+                    <span>التحكم الشامل في أنشطة الشركة وصور العرض في الواجهة</span>
                   </h3>
                   <p className="text-xs text-slate-300 mt-1">
-                    يمكنك تغيير أي صورة موجودة حالياً، رفع صورة بديلة من جهازك، تعديل النصوص أو الإحصائيات، أو الإبقاء عليها كما هي.
+                    يمكنك إضافة أنشطة جديدة بصورة ونصوص كتابية، تغيير أي صورة موجودة حالياً، أو تعديل العناوين والإحصائيات لتظهر فوراً لجميع الزوار.
                   </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleSaveActivities}
-                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 cursor-pointer transition-colors shrink-0 shadow-lg"
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 cursor-pointer transition-colors shrink-0 shadow-lg active:scale-95"
                 >
                   <Check className="w-4 h-4" />
-                  <span>حفظ وتثبيت تعديلات الصور</span>
+                  <span>حفظ وتثبيت كافة الأنشطة والصور</span>
                 </button>
               </div>
 
               {activityFeedback && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2 font-bold">
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2 font-bold animate-in fade-in duration-200">
                   <Check className="w-4 h-4" />
                   <span>{activityFeedback}</span>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {editableActivities.map((act) => (
-                  <div
-                    key={act.id}
-                    className="p-5 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4 flex flex-col justify-between"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono-num font-bold text-amber-400">
-                          نشاط #{act.numberIndex}
-                        </span>
-                        <span className="text-[11px] text-slate-400">{act.categoryAr}</span>
-                      </div>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Form: Add New Activity with Image & Text */}
+                <form
+                  onSubmit={handleCreateActivity}
+                  className="lg:col-span-5 p-6 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4 h-fit shadow-md"
+                >
+                  <div className="space-y-1">
+                    <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-amber-400" />
+                      <span>إضافة نشاط وواجهة جديدة بصورة ونصوص كتابية</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      أضف بطاقة نشاط جديدة مع رفع صورتها وتحديد نصوصها لتظهر فوراً في واجهة الموقع الرئيسية.
+                    </p>
+                  </div>
 
-                      {/* Image Preview & Upload Controls */}
-                      <div className="space-y-2">
-                        <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-700 bg-black">
-                          <img
-                            src={act.imageUrl}
-                            alt={act.titleAr}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      عنوان النشاط باللغة العربية <span className="text-amber-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newActivityTitle}
+                      onChange={(e) => setNewActivityTitle(e.target.value)}
+                      placeholder="مثال: قطاع وكالات الدعم والدردشة الصوتية..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                    />
+                  </div>
 
-                        <div className="space-y-1.5">
-                          <label className="flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/15 text-amber-300 text-xs font-semibold cursor-pointer transition-colors">
-                            <Upload className="w-4 h-4" />
-                            <span>رفع صورة بديلة من الجهاز لهذا النشاط</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleActivityImageUpload(e, act.id)}
-                              className="hidden"
-                            />
-                          </label>
-
-                          <input
-                            type="text"
-                            dir="ltr"
-                            value={act.imageUrl}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableActivities((prev) =>
-                                prev.map((a) => (a.id === act.id ? { ...a, imageUrl: val } : a))
-                              );
-                            }}
-                            placeholder="أو الصق رابط صورة بديل هنا..."
-                            className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-[11px] text-white font-mono-num"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Content Fields */}
-                      <div className="space-y-2 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            عنوان النشاط
-                          </label>
-                          <input
-                            type="text"
-                            value={act.titleAr}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableActivities((prev) =>
-                                prev.map((a) => (a.id === act.id ? { ...a, titleAr: val } : a))
-                              );
-                            }}
-                            className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            وصف النشاط
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={act.descriptionAr}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableActivities((prev) =>
-                                prev.map((a) => (a.id === act.id ? { ...a, descriptionAr: val } : a))
-                              );
-                            }}
-                            className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                            الإحصائية البارزة المعروضة
-                          </label>
-                          <input
-                            type="text"
-                            value={act.metricsAr}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditableActivities((prev) =>
-                                prev.map((a) => (a.id === act.id ? { ...a, metricsAr: val } : a))
-                              );
-                            }}
-                            className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
-                          />
-                        </div>
-                      </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-300">
+                        التصنيف
+                      </label>
+                      <input
+                        type="text"
+                        value={newActivityCategory}
+                        onChange={(e) => setNewActivityCategory(e.target.value)}
+                        placeholder="أنشطة وقطاعات العمل"
+                        className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-300">
+                        المسمى الإنجليزي (Subtitle)
+                      </label>
+                      <input
+                        type="text"
+                        value={newActivityTitleEn}
+                        onChange={(e) => setNewActivityTitleEn(e.target.value)}
+                        placeholder="HOST AGENCIES NETWORK"
+                        className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                      />
                     </div>
                   </div>
-                ))}
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      النص والوصف التفصيلي للنشاط <span className="text-amber-400">*</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      required
+                      value={newActivityDescription}
+                      onChange={(e) => setNewActivityDescription(e.target.value)}
+                      placeholder="اكتب وصفاً جذاباً يشرح طبيعة عمل هذا القطاع ومميزاته للزوار..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      الإحصائية أو الإنجاز البارز
+                    </label>
+                    <input
+                      type="text"
+                      value={newActivityMetrics}
+                      onChange={(e) => setNewActivityMetrics(e.target.value)}
+                      placeholder="مثال: +19,700 وكالة معتمدة عالمياً"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      رفع صورة النشاط (تظهر مباشرة فوراً) <span className="text-amber-400">*</span>
+                    </label>
+                    <label className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/15 text-amber-300 text-xs font-semibold cursor-pointer transition-colors shadow-inner">
+                      <Upload className="w-4 h-4 text-amber-400" />
+                      <span>اختر ملف صورة من الجهاز للنشاط</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleActivityImageUpload(e)}
+                        className="hidden"
+                      />
+                    </label>
+                    <input
+                      type="text"
+                      dir="ltr"
+                      value={newActivityImageUrl}
+                      onChange={(e) => setNewActivityImageUrl(e.target.value)}
+                      placeholder="أو الصق رابط صورة النشاط المباشر هنا..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                    />
+
+                    {/* Direct Live Preview Box for Activity Card */}
+                    {newActivityImageUrl && (
+                      <div className="space-y-1.5 p-3 rounded-xl bg-[#070913] border border-amber-500/40 animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between text-[11px] text-amber-300 font-bold mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Eye className="w-3.5 h-3.5 text-amber-400" />
+                            <span>معاينة حية ومباشرة لبطاقة النشاط:</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setNewActivityImageUrl('')}
+                            className="text-rose-400 hover:text-rose-300 text-[10px] font-semibold cursor-pointer"
+                          >
+                            إزالة الصورة ✕
+                          </button>
+                        </div>
+                        <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
+                          <div className="relative aspect-video">
+                            <img
+                              key={newActivityImageUrl}
+                              src={newActivityImageUrl}
+                              alt="معاينة النشاط"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-[#0F1424] via-transparent to-transparent" />
+                          </div>
+                          <div className="p-3 space-y-1 text-right">
+                            <span className="text-[10px] text-slate-400 block">{newActivityCategory} · {newActivityTitleEn}</span>
+                            <h5 className="text-xs sm:text-sm font-bold text-white line-clamp-1">{newActivityTitle || 'عنوان النشاط الجديد'}</h5>
+                            <p className="text-[10px] text-slate-300 line-clamp-2">{newActivityDescription || 'الوصف التجريبي للنشاط...'}</p>
+                            <span className="text-[10px] text-blue-400 font-semibold block pt-1">{newActivityMetrics}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer shadow-lg shadow-amber-500/20 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>تثبيت هذا النشاط في واجهة الموقع مباشرة</span>
+                  </button>
+                </form>
+
+                {/* Existing Activities List with Instant Photo Upload & Text Controls */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm sm:text-base font-bold text-white">
+                      الأنشطة الحالية المثبتة في واجهة الموقع ({editableActivities.length})
+                    </h4>
+                    <span className="text-xs text-slate-400">
+                      أي تعديل يتم حفظه يظهر مباشرة للجميع
+                    </span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {editableActivities.map((act) => (
+                      <div
+                        key={act.id}
+                        className="p-5 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4 shadow-md transition-all hover:border-slate-700"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-xs font-mono-num font-bold">
+                              نشاط #{act.numberIndex}
+                            </span>
+                            <span className="text-xs text-slate-400">{act.categoryAr}</span>
+                          </div>
+
+                          {editableActivities.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`هل أنت متأكد من حذف نشاط "${act.titleAr}" من واجهة الموقع؟`)) {
+                                  handleDeleteActivity(act.id);
+                                }
+                              }}
+                              className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
+                              title="حذف هذا النشاط من الواجهة"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Image Preview & Upload Controls */}
+                        <div className="space-y-2">
+                          <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-700 bg-black">
+                            <img
+                              key={act.imageUrl}
+                              src={act.imageUrl}
+                              alt={act.titleAr}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/15 text-amber-300 text-xs font-semibold cursor-pointer transition-colors">
+                              <Upload className="w-4 h-4" />
+                              <span>رفع صورة بديلة من الجهاز (تظهر مباشرة فوراً)</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleActivityImageUpload(e, act.id)}
+                                className="hidden"
+                              />
+                            </label>
+
+                            <input
+                              type="text"
+                              dir="ltr"
+                              value={act.imageUrl}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableActivities((prev) =>
+                                  prev.map((a) => (a.id === act.id ? { ...a, imageUrl: val } : a))
+                                );
+                              }}
+                              placeholder="أو الصق رابط صورة بديل هنا..."
+                              className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-[11px] text-white font-mono-num"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Content Fields */}
+                        <div className="space-y-2 pt-1">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              عنوان النشاط في الواجهة
+                            </label>
+                            <input
+                              type="text"
+                              value={act.titleAr}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableActivities((prev) =>
+                                  prev.map((a) => (a.id === act.id ? { ...a, titleAr: val } : a))
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              وصف النشاط المعروض
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={act.descriptionAr}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableActivities((prev) =>
+                                  prev.map((a) => (a.id === act.id ? { ...a, descriptionAr: val } : a))
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                              الإحصائية البارزة المعروضة
+                            </label>
+                            <input
+                              type="text"
+                              value={act.metricsAr}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditableActivities((prev) =>
+                                  prev.map((a) => (a.id === act.id ? { ...a, metricsAr: val } : a))
+                                );
+                              }}
+                              className="w-full px-3 py-2 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                            />
+                          </div>
+
+                          <div className="pt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateActivities(editableActivities);
+                                setActivityFeedback(`تم حفظ وتثبيت تعديلات نشاط "${act.titleAr}" بنجاح في الواجهة!`);
+                                setTimeout(() => setActivityFeedback(null), 3500);
+                              }}
+                              className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer transition-colors"
+                            >
+                              حفظ وتثبيت هذا النشاط
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1860,6 +2548,564 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   ))
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB 7: OFFICIAL CONTACT CHANNELS & WHATSAPP NUMBERS MANAGEMENT */}
+          {activeTab === 'contact_channels' && (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Add New Contact Channel Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newChannelLabel.trim() || !newChannelValue.trim()) return;
+                  const newChan: ContactChannel = {
+                    id: `contact-${Date.now()}`,
+                    type: newChannelType,
+                    labelAr: newChannelLabel.trim(),
+                    value: newChannelValue.trim(),
+                    descriptionAr: newChannelDesc.trim() || 'قناة تواصل رسمية معتمدة من الإدارة العليا'
+                  };
+                  const updated = [...editableChannels, newChan];
+                  setEditableChannels(updated);
+                  onUpdateContactChannels(updated);
+                  setNewChannelLabel('');
+                  setNewChannelValue('');
+                  setNewChannelDesc('');
+                  setChannelFeedback('تمت إضافة وتثبيت القناة بنجاح في الموقع!');
+                  setTimeout(() => setChannelFeedback(null), 3500);
+                }}
+                className="lg:col-span-5 p-6 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-4 h-fit"
+              >
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Phone className="w-5 h-5 text-emerald-400" />
+                    <span>إضافة وتعديل أرقام الواتساب والتواصل الرسمي</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    يمكنك تغيير وتحديث أرقام الواتساب وعناوين البريد الإلكتروني في أي وقت لتظهر لكافة الزوار فوراً.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">نوع القناة</label>
+                  <select
+                    value={newChannelType}
+                    onChange={(e) => setNewChannelType(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                  >
+                    <option value="whatsapp">رقم واتساب رسمي (WhatsApp)</option>
+                    <option value="email">عنوان بريد إلكتروني (Official Email)</option>
+                    <option value="phone">خط هاتفي مباشر (Direct Phone)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    مسمى القناة أو الجهة <span className="text-amber-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newChannelLabel}
+                    onChange={(e) => setNewChannelLabel(e.target.value)}
+                    placeholder="مثال: واتساب الإدارة العليا (المدير العام عيون Prince)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    الرقم أو البريد الإلكتروني <span className="text-amber-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    dir="ltr"
+                    value={newChannelValue}
+                    onChange={(e) => setNewChannelValue(e.target.value)}
+                    placeholder="+201065874461 أو +201066934250 أو البريد"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white font-mono-num"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    وصف مختصر للغرض من الرقم
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newChannelDesc}
+                    onChange={(e) => setNewChannelDesc(e.target.value)}
+                    placeholder="مثال: للتواصل الفوري واعتماد العقود وحل الشكاوى..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070913] border border-slate-800 text-xs text-white"
+                  />
+                </div>
+
+                {channelFeedback && (
+                  <p className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                    <Check className="w-4 h-4" />
+                    <span>{channelFeedback}</span>
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>تثبيت القناة في الموقع</span>
+                </button>
+              </form>
+
+              {/* Current Channels List with In-Place Editing */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white">
+                    أرقام الواتساب وعناوين التواصل المثبتة حالياً ({editableChannels.length})
+                  </h3>
+                </div>
+
+                {editableChannels.map((chan, idx) => (
+                  <div
+                    key={chan.id}
+                    className="p-5 rounded-2xl bg-[#0F1424] border border-slate-800 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={chan.labelAr}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditableChannels((prev) =>
+                              prev.map((c) => (c.id === chan.id ? { ...c, labelAr: val } : c))
+                            );
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#070913] border border-slate-700 text-xs font-bold text-white"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = editableChannels.filter((c) => c.id !== chan.id);
+                            setEditableChannels(updated);
+                            onUpdateContactChannels(updated);
+                          }}
+                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="حذف هذا الرقم"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">الرقم / البريد:</label>
+                        <input
+                          type="text"
+                          dir="ltr"
+                          value={chan.value}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditableChannels((prev) =>
+                              prev.map((c) => (c.id === chan.id ? { ...c, value: val } : c))
+                            );
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#070913] border border-slate-700 text-xs font-mono-num text-amber-300"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">الوصف:</label>
+                        <input
+                          type="text"
+                          value={chan.descriptionAr}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditableChannels((prev) =>
+                              prev.map((c) => (c.id === chan.id ? { ...c, descriptionAr: val } : c))
+                            );
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#070913] border border-slate-700 text-xs text-slate-300"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateContactChannels(editableChannels);
+                          setChannelFeedback('تم حفظ التعديلات على كافة الأرقام بنجاح!');
+                          setTimeout(() => setChannelFeedback(null), 3000);
+                        }}
+                        className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer"
+                      >
+                        حفظ التعديلات
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: USER SUPPORT TICKETS & GRIEVANCES DASHBOARD */}
+          {activeTab === 'support_tickets' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-amber-400" />
+                    <span>لوحة شكاوى واستفسارات المستخدمين والمقدمين</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    تصل هنا كافة المشاكل والشكاوى المرسلة من نموذج الدعم المباشر، متضمنة كود التسجيل، الواتساب، والسبب.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-300">
+                  إجمالي الشكاوى:{' '}
+                  <strong className="text-white font-mono-num">{tickets.length}</strong>
+                </div>
+              </div>
+
+              {tickets.length === 0 ? (
+                <div className="p-12 text-center rounded-2xl bg-[#0F1424] border border-slate-800 text-slate-400 text-sm">
+                  لا توجد شكاوى أو استفسارات حالياً.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {tickets.map((tkt) => {
+                    const isNew = tkt.status === 'new';
+                    const isResolved = tkt.status === 'resolved';
+
+                    return (
+                      <div
+                        key={tkt.id}
+                        className={`p-6 rounded-2xl border space-y-4 ${
+                          isNew
+                            ? 'bg-amber-950/15 border-amber-500/40 shadow-lg'
+                            : isResolved
+                            ? 'bg-emerald-950/10 border-emerald-500/30 opacity-80'
+                            : 'bg-[#0F1424] border-slate-800'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-sm font-bold text-white">{tkt.applicantOrUserName}</span>
+                            {tkt.realFullNameOptional && (
+                              <span className="text-xs text-slate-300">({tkt.realFullNameOptional})</span>
+                            )}
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[11px] font-bold">
+                              {tkt.role}
+                            </span>
+                            <span className="text-xs text-amber-400 font-mono-num font-bold">
+                              كود: {tkt.trackingCode}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono-num">{tkt.createdAt}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                isNew
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : isResolved
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                              }`}
+                            >
+                              {isNew ? 'جديدة بانتظار الرد' : isResolved ? 'تم الحل والرد' : 'قيد المتابعة'}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => onDeleteTicket(tkt.id)}
+                              className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="حذف التذكرة"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Contact details */}
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300 bg-[#070913] p-3 rounded-xl border border-slate-800">
+                          <div>
+                            <span className="text-slate-500 ml-1">وسيلة التواصل المدخلة:</span>
+                            <span className="text-amber-300 font-mono-num font-bold" dir="ltr">
+                              {tkt.whatsappOrEmail}
+                            </span>
+                          </div>
+                          {tkt.whatsappOrEmail.includes('+') && (
+                            <a
+                              href={`https://wa.me/${tkt.whatsappOrEmail.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                `مرحباً ${tkt.applicantOrUserName}، نتواصل معك من إدارة Vibers V العليا بخصوص طلبك رقم ${tkt.trackingCode}`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>محادثة واتساب فورية</span>
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Problem & Details description */}
+                        <div className="space-y-2 text-xs">
+                          <div>
+                            <span className="text-slate-400 block font-semibold mb-0.5">وصف المشكلة:</span>
+                            <p className="text-slate-100 bg-[#070913] p-3 rounded-xl border border-slate-800 leading-relaxed">
+                              {tkt.problemDescription}
+                            </p>
+                          </div>
+                          {tkt.reasonOrDetails && (
+                            <div>
+                              <span className="text-slate-400 block font-semibold mb-0.5">السبب والتفاصيل:</span>
+                              <p className="text-slate-300 bg-[#070913] p-3 rounded-xl border border-slate-800 leading-relaxed">
+                                {tkt.reasonOrDetails}
+                              </p>
+                            </div>
+                          )}
+                          {tkt.adminReply && (
+                            <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40">
+                              <span className="text-emerald-400 font-bold block mb-1">رد الإدارة المسجل:</span>
+                              <p className="text-emerald-100">{tkt.adminReply}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Reply / Status Action */}
+                        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-slate-800">
+                          <div className="flex-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={ticketReplyText[tkt.id] || ''}
+                              onChange={(e) =>
+                                setTicketReplyText((prev) => ({ ...prev, [tkt.id]: e.target.value }))
+                              }
+                              placeholder="اكتب رد الإدارة أو الحل هنا..."
+                              className="w-full px-3 py-1.5 rounded-lg bg-[#070913] border border-slate-700 text-xs text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reply = ticketReplyText[tkt.id] || 'تمت مراجعة طلبك والتواصل معك.';
+                                onUpdateTicketStatus(tkt.id, 'resolved', reply);
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer whitespace-nowrap"
+                            >
+                              إرسال الرد وحل التذكرة
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onUpdateTicketStatus(tkt.id, 'in_progress')}
+                              className="px-3 py-1.5 rounded-lg bg-cyan-600/20 text-cyan-300 border border-cyan-500/40 text-xs font-semibold cursor-pointer"
+                            >
+                              قيد المتابعة
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateTicketStatus(tkt.id, 'resolved')}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 text-xs font-semibold cursor-pointer"
+                            >
+                              اعتبارها محلولة
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: RECYCLE BIN & TRASH (Directly requested: تظهر في لوحة المدير في الاعلى اي محذوفات تحصل تدخل الى هذه السله ويكون موجود معها زر ارجاع ان تظهر وسط مستخدمين المتقدمين) */}
+          {activeTab === 'trash' && (
+            <div className="space-y-6">
+              {/* Header Card */}
+              <div className="p-6 rounded-2xl bg-gradient-to-r from-rose-950/30 via-[#0F1424] to-slate-900 border border-rose-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-xl shadow-rose-950/20">
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                      <Trash2 className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2.5">
+                        <span>سلة المهملات والمحذوفات</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-mono-num font-bold border border-rose-500/40">
+                          {trashedApplications.length} عنصر محذوف
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                        نظام الحفظ الآمن للمتقدمين المرفوضين والمستخدمين غير النشطين. عند الرغبة، يمكنك الضغط على <strong className="text-emerald-400 font-bold">"استرجاع إلى قائمة المتقدمين"</strong> ليعود المستخدم للظهور فوراً وسط المتقدمين النشطين.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
+                  {trashedApplications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('هل أنت متأكد من رغبتك في تفريغ سلة المهملات نهائياً؟')) {
+                          onEmptyTrash();
+                        }
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer w-full sm:w-auto"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>تفريغ السلة بالكامل</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('applications')}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer w-full sm:w-auto shadow-md"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>العودة للمتقدمين النشطين</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Trashed items list */}
+              {trashedApplications.length === 0 ? (
+                <div className="p-16 rounded-2xl bg-[#0F1424] border border-slate-800 text-center space-y-3">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                    <Trash2 className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-base font-bold text-white">سلة المهملات فارغة تماماً</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    لا توجد أي بيانات لمتقدمين محذوفين حالياً. عند قيامك بحذف أي مستخدم مرفوض أو غير نشط من النظام، سيتم حفظ بياناته هنا مع إمكانية استرجاعه في أي وقت بضغطة زر.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {trashedApplications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="p-6 rounded-2xl bg-[#0F1424] border border-rose-500/30 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 shadow-md transition-all hover:border-rose-500/50"
+                    >
+                      <div className="space-y-3 flex-1">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                            <span>{app.realFullName}</span>
+                            <button
+                              type="button"
+                              onClick={() => openApplicantDetail(app)}
+                              className="p-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-white cursor-pointer transition-colors"
+                              title="رؤية ومعاينة تفاصيل ووثائق المتقدم"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="text-xs text-amber-400 font-normal">
+                              (اللقب: {app.nickname})
+                            </span>
+                          </h4>
+
+                          <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-rose-950/60 text-rose-300 border border-rose-500/40">
+                            {app.trashedReason || 'محذوف من السيستم'}
+                          </span>
+
+                          <span
+                            className={`px-2.5 py-0.5 rounded-md text-xs font-bold ${
+                              app.registrationTrack === 'official'
+                                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-300'
+                                : 'bg-cyan-500/20 border border-cyan-500/50 text-cyan-300'
+                            }`}
+                          >
+                            {app.registrationTrack === 'official' ? 'مسار رسمي 100%' : 'مسار مختصر 50%'}
+                          </span>
+
+                          <span className="text-xs font-mono-num text-slate-500">
+                            تاريخ الحذف: {app.trashedAt}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs bg-[#070913] p-3.5 rounded-xl border border-slate-800">
+                          <div>
+                            <span className="text-slate-500 block mb-0.5">الهاتف والواتساب:</span>
+                            <span className="font-mono-num text-emerald-400 font-semibold" dir="ltr">
+                              {app.whatsappPhone || app.fullPhone}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block mb-0.5">البريد الإلكتروني:</span>
+                            <span className="font-mono-num text-white" dir="ltr">
+                              {app.email}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block mb-0.5">الوظائف المسجلة:</span>
+                            <span className="text-blue-400 font-semibold">
+                              {app.selectedRoles.map(getRoleLabel).join(' + ')}
+                            </span>
+                          </div>
+                        </div>
+
+                        {app.bio && (
+                          <div className="text-xs text-slate-400 bg-slate-900/40 p-2.5 rounded-xl border border-slate-800 line-clamp-1">
+                            <span className="text-slate-500">النبذة: </span>
+                            <span>{app.bio}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Restore and Actions */}
+                      <div className="flex flex-wrap lg:flex-col items-stretch gap-2.5 shrink-0 w-full lg:w-auto">
+                        {/* Eye Inspection Button */}
+                        <button
+                          type="button"
+                          onClick={() => openApplicantDetail(app)}
+                          className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4 text-cyan-400" />
+                          <span>رؤية الملف كاملاً</span>
+                        </button>
+
+                        {/* RESTORE BUTTON AS DIRECTLY REQUESTED (زر ارجاع ليعود وسط المتقدمين) */}
+                        <button
+                          type="button"
+                          onClick={() => onRestoreTrashedApplication(app.id)}
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 border border-emerald-400/40 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+                          title="استرجاع هذا المستخدم ليظهر مرة أخرى وسط المتقدمين النشطين"
+                        >
+                          <RotateCcw className="w-4 h-4 animate-spin-once" />
+                          <span>استرجاع إلى قائمة المتقدمين</span>
+                        </button>
+
+                        {/* Permanent Delete */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`هل أنت متأكد من الحذف النهائي لبيانات ${app.realFullName}؟`)) {
+                              onDeleteTrashedPermanently(app.id);
+                            }
+                          }}
+                          className="px-4 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                          title="حذف نهائي لا يمكن استرجاعه من السيرفر"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف نهائي</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

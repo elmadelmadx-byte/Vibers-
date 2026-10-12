@@ -6,7 +6,9 @@ import {
   UserRatingComment,
   LivePlatformStats,
   StatCardCustomization,
-  BroadcastNotification
+  BroadcastNotification,
+  ContactChannel,
+  SupportTicket
 } from '../types';
 
 export const ROLES_LIST: RoleOption[] = [
@@ -189,6 +191,49 @@ export const INITIAL_NOTIFICATIONS: BroadcastNotification[] = [
   }
 ];
 
+export const INITIAL_CONTACT_CHANNELS: ContactChannel[] = [
+  {
+    id: 'contact-wa-1',
+    type: 'whatsapp',
+    labelAr: 'واتساب الإدارة العليا المباشر (المدير العام عيون Prince)',
+    value: '+201065874461',
+    descriptionAr: 'الخط الرسمي الأول للتواصل الفوري، استفسارات التعيين، واعتماد العقود الرسمية والمشاكل الطارئة',
+    isPrimary: true
+  },
+  {
+    id: 'contact-wa-2',
+    type: 'whatsapp',
+    labelAr: 'خط دعم الوكلاء ومطوري الأعمال والشكاوى (WhatsApp Business)',
+    value: '+201066934250',
+    descriptionAr: 'الخط الرسمي الثاني المخصص لوكالات المضيفين ووكلاء الشحن وشؤون السوبر أدمن والأدمن وخدمة العملاء',
+    isPrimary: false
+  },
+  {
+    id: 'contact-mail-1',
+    type: 'email',
+    labelAr: 'البريد الإلكتروني الرسمي للقيادة العامة',
+    value: 'vibersvge@gmail.com',
+    descriptionAr: 'المراسلات الرسمية والشكاوى القانونية واعتماد الوثائق',
+    isPrimary: true
+  }
+];
+
+export const INITIAL_TICKETS: SupportTicket[] = [
+  {
+    id: 'tkt-1',
+    trackingCode: 'VBR-102-SEC',
+    applicantOrUserName: 'فهد الدوسري',
+    realFullNameOptional: 'فهد محمد ناصر الدوسري',
+    role: 'وكيل شحن معتمد',
+    whatsappOrEmail: '+966 512345678',
+    problemDescription: 'طلب استفسار وتأكيد كود الانضمام المعتمد',
+    reasonOrDetails: 'أرغب في التأكد من تفعيل صلاحيات شحن العملات في لوحة المنظومة.',
+    status: 'resolved',
+    createdAt: 'منذ ساعتين',
+    adminReply: 'تم التحقق من بياناتك واعتماد حسابك رسمياً كوكيل شحن معتمد.'
+  }
+];
+
 // Default Customizable Stat Cards that Manager Ayoun Prince can rename or customize
 export const INITIAL_CUSTOMIZABLE_CARDS: StatCardCustomization[] = [
   {
@@ -365,16 +410,364 @@ export const INITIAL_COMMENTS: UserRatingComment[] = [
     authorHandle: '@nour_host_agency',
     stars: 7,
     comment: 'أفضل منظومة لدعم وكلاء المضيفين والـ BD. الرواتب والمكافآت تنزل في موعدها بالدقيقة، وفريق السوبر أدمن متعاون جداً في حل أي مشكلة تقنية فوراً.',
-    createdAt: 'منذ 5 ساعات',
+    createdAt: 'منذ 4 ساعات',
     activityType: 'وكيل مضيفين'
   },
   {
     id: 'rev-3',
+    authorName: 'الشيخ ماجد العتيبي',
+    authorHandle: '@majed_alotaibi_vip',
+    stars: 7,
+    comment: 'المنصة الصوتية الوحيدة التي تجمع بين الأمان المطلق وحفظ حقوق الوكلاء والداعمين. فخور بكوني داعم VIP في منظومة Vibers V بإشراف عيون Prince.',
+    createdAt: 'منذ 5 ساعات',
+    activityType: 'مستخدم VIP'
+  },
+  {
+    id: 'rev-4',
+    authorName: 'المهندس خالد الشمري',
+    authorHandle: '@khaled_voice_super',
+    stars: 7,
+    comment: 'إشراف وتنظيم بمستوى عالمي. نتابع أكثر من 18 مطور أعمال BD تحت مظلتنا، والتعامل مع الإدارة العامة يتم بمنتهى الشفافية والسرعة والاحترافية.',
+    createdAt: 'منذ 6 ساعات',
+    activityType: 'سوبر أدمن / أدمن'
+  },
+  {
+    id: 'rev-5',
+    authorName: 'سارة أحمد المنصور',
+    authorHandle: '@queen_sarah_dubai',
+    stars: 7,
+    comment: 'وكالتنا تضم 85 مضيفة صوتية محترفة، وحققنا نمو أرباح بنسبة +140% خلال 3 أشهر فقط بعد انضمامنا لعائلة Vibers V العالمية.',
+    createdAt: 'منذ 8 ساعات',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-6',
+    authorName: 'المستشار راشد الكعبي',
+    authorHandle: '@rashed_alkaabi_qa',
+    stars: 7,
+    comment: 'تطوير الأعمال في Vibers V له طابع استثنائي. سهولة التعاقد مع الوكالات الصوتية الدولية والحصول على نسب أرباح مجزية وعقود موثقة ومعتمدة.',
+    createdAt: 'منذ 10 ساعات',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-7',
+    authorName: 'د. يوسف الغامدي',
+    authorHandle: '@dr_youssef_ksa',
+    stars: 7,
+    comment: 'البنية التحتية للسيرفرات الصوتية وتقنية الغرف التفاعلية لا مثيل لها في الشرق الأوسط. 7 نجوم ملكية مستحقة بجدارة للإدارة الحكيمة.',
+    createdAt: 'منذ 12 ساعة',
+    activityType: 'شريك تطوير تطبيقات'
+  },
+  {
+    id: 'rev-8',
+    authorName: 'ريم القحطاني',
+    authorHandle: '@reem_voice_star',
+    stars: 7,
+    comment: 'احترام المذيعات وتوفير بيئة بث محترمة وآمنة من أهم مزايا Vibers V. الدعم الفني متواجد معنا في الرومات الصوتية على مدار الساعة.',
+    createdAt: 'منذ 14 ساعة',
+    activityType: 'صانعة محتوى صوتي'
+  },
+  {
+    id: 'rev-9',
+    authorName: 'أحمد خليل النجار',
+    authorHandle: '@ahmed_najjar_eg',
+    stars: 7,
+    comment: 'أسرع شحن عملات وكوينز رأيته في مجال تطبيقات الصوت. التحويلات تتم في أقل من 30 ثانية دون أي تعليق أو تأخير.',
+    createdAt: 'منذ 16 ساعة',
+    activityType: 'وكيل شحن معتمد'
+  },
+  {
+    id: 'rev-10',
+    authorName: 'فيصل بن طلال السبيعي',
+    authorHandle: '@faisal_subaie',
+    stars: 7,
+    comment: 'القيادة الحكيمة من المدير العام عيون Prince تمنح كل عضو حقه كاملاً. تطبيق القوانين وحماية المنظومة هي أولويتنا دائماً.',
+    createdAt: 'منذ 18 ساعة',
+    activityType: 'سوبر أدمن / أدمن'
+  },
+  {
+    id: 'rev-11',
+    authorName: 'منى العبدالله',
+    authorHandle: '@mona_kuwait_audio',
+    stars: 7,
+    comment: 'وكالة فويس الكويت أصبحت في صدارة الترتيب بفضل توجيهات الإدارة العليا والمكافآت الأسبوعية المحفزة جداً.',
+    createdAt: 'يوم أمس',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-12',
+    authorName: 'سلطان الدليمي',
+    authorHandle: '@sultan_iraq_bd',
+    stars: 7,
+    comment: 'استقطبنا أكثر من 20 وكالة جديدة في العراق خلال شهرين. المصداقية والدفع الفوري هما سر النجاح مع Vibers V.',
+    createdAt: 'يوم أمس',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-13',
+    authorName: 'هيا الحربي',
+    authorHandle: '@haya_alharbi_vip',
+    stars: 7,
+    comment: 'أجواء الرومات الصوتية راقية جداً والمسابقات الرسمية تعطي حماس كبير للجميع. تقييمي 7 نجوم كاملة بدون تردد.',
+    createdAt: 'يوم أمس',
+    activityType: 'مستخدم VIP'
+  },
+  {
+    id: 'rev-14',
+    authorName: 'محمد باسل الزيود',
+    authorHandle: '@basel_jordan_host',
+    stars: 7,
+    comment: 'تعامل راقي جداً من لجنة المراجعة والاعتماد. رسالة التعيين والعقد الرسمي وصلا في أقل من 24 ساعة عبر الواتساب والبريد.',
+    createdAt: 'منذ يومين',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-15',
+    authorName: 'طارق المحمدي',
+    authorHandle: '@tariq_morocco_dev',
+    stars: 7,
+    comment: 'شراكة تقنية ناجحة بكل المقاييس. كفاءة واجهات API وسرعة الاستجابة تفوق أي منصة صوتية أخرى في السوق.',
+    createdAt: 'منذ يومين',
+    activityType: 'شريك تطوير تطبيقات'
+  },
+  {
+    id: 'rev-16',
+    authorName: 'عبدالعزيز بن ناصر',
+    authorHandle: '@abdulaziz_vip99',
+    stars: 7,
+    comment: 'أفضل خدمة عملاء وتجاوب سريع مع التذاكر والاستفسارات. 7 نجوم تستحقونها عن جدارة واستحقاق تحت قيادة عيون Prince.',
+    createdAt: 'منذ يومين',
+    activityType: 'مستخدم VIP'
+  },
+  {
+    id: 'rev-17',
+    authorName: 'شروق التميمي',
+    authorHandle: '@shorouq_tamimi',
+    stars: 7,
+    comment: 'النظام المالي وحساب الأرباح شفاف بنسبة 100% مع تقارير يومية مفصلة لكل مذيع في الوكالة، شكراً لكم.',
+    createdAt: 'منذ 3 أيام',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-18',
+    authorName: 'حمزة المغربي',
+    authorHandle: '@hamza_shipping_agent',
+    stars: 7,
+    comment: 'السيولة متوفرة والتحويلات الدولية البنكية والعملات الرقمية تتم بأمان تام تحت إشراف القيادة التنفيذية.',
+    createdAt: 'منذ 3 أيام',
+    activityType: 'وكيل شحن معتمد'
+  },
+  {
+    id: 'rev-19',
+    authorName: 'ناصر المطيري',
+    authorHandle: '@nasser_mutairi_ksa',
+    stars: 7,
+    comment: 'نظام الترقية والصلاحيات في المنظومة عادل جداً ويكافئ المجتهدين ومن يمتلكون فرق BD نشطة ومؤثرة.',
+    createdAt: 'منذ 3 أيام',
+    activityType: 'سوبر أدمن / أدمن'
+  },
+  {
+    id: 'rev-20',
+    authorName: 'فاطمة الزهراء البلوشي',
+    authorHandle: '@fatima_oman_voice',
+    stars: 7,
+    comment: 'حصلت على درع التميز الشهري ومكافأة مباشرة من الإدارة العليا. فخورة بانتمائي لمنظومة Vibers V الصوتية.',
+    createdAt: 'منذ 4 أيام',
+    activityType: 'صانعة محتوى صوتي'
+  },
+  {
+    id: 'rev-21',
+    authorName: 'عادل الجابري',
+    authorHandle: '@adel_aljabri_uae',
+    stars: 7,
+    comment: 'توفير كافة الأدوات التسويقية والتدريب المستمر لمطوري الأعمال جعل مهمتنا سهلة ومثمرة في كافة دول الخليج.',
+    createdAt: 'منذ 4 أيام',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-22',
+    authorName: 'زياد الشامي',
+    authorHandle: '@ziad_voice_agency',
+    stars: 7,
+    comment: 'بيئة داعمة للشباب والمواهب الصوتية. جميع المذيعين في فريقي يشيدون بالدعم الفني والإداري الصارم والعادل.',
+    createdAt: 'منذ 5 أيام',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-23',
+    authorName: 'بندر بن فهد الهذلي',
+    authorHandle: '@bandar_vip_voice',
+    stars: 7,
+    comment: 'غرف صوتية بنقاء صوت كريستالي ومؤثرات خرافية. لا غنى عن قضاء الأمسيات في تطبيقات Vibers V يومياً.',
+    createdAt: 'منذ 5 أيام',
+    activityType: 'مستخدم VIP'
+  },
+  {
+    id: 'rev-24',
+    authorName: 'مريم الصالح',
+    authorHandle: '@maryam_alsaleh_kw',
+    stars: 7,
+    comment: 'أشكر المدير العام عيون Prince على دعمه المتواصل واهتمامه الشخصي بكل وكالة شريكة، أنتم الرقم واحد دائماً.',
+    createdAt: 'منذ 6 أيام',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-25',
+    authorName: 'حسام الدين الرشيدي',
+    authorHandle: '@hossam_rashidi_eg',
+    stars: 7,
+    comment: 'معاملات بملايين الكوينز يومياً دون أي خطأ تقني. نظام شحن صلب ومحمي بأعلى درجات الأمان المالي.',
+    createdAt: 'منذ 6 أيام',
+    activityType: 'وكيل شحن معتمد'
+  },
+  // 6-star comments (80% satisfaction tier)
+  {
+    id: 'rev-26',
     authorName: 'عمر الزهراني',
     authorHandle: '@omar_audio_dev',
     stars: 6,
     comment: 'جودة السيرفرات الصوتية وتصميم غرف الـ VIP في تطبيقات Vibers V تتفوق على جميع المنافسين. تجربة ممتازة وتستحق 7 نجوم بجدارة.',
     createdAt: 'يوم أمس',
     activityType: 'تطوير تطبيقات'
+  },
+  {
+    id: 'rev-27',
+    authorName: 'لمياء الرشيد',
+    authorHandle: '@lamia_voice_host',
+    stars: 6,
+    comment: 'منظومة قوية جداً وتنظيم محكم ومريح. نقترح فقط إضافة خيارات تصفية إضافية في لوحة المضيفين لتكون المنظومة متكاملة 100%.',
+    createdAt: 'منذ يومين',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-28',
+    authorName: 'غازي الشمري',
+    authorHandle: '@ghazi_bd_ksa',
+    stars: 6,
+    comment: 'مكافآت شهرية مجزية وعقود واضحة وموثقة. تم تدريب فريقي بنجاح والدعم الفني ممتاز وسريع التجاوب.',
+    createdAt: 'منذ 3 أيام',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-29',
+    authorName: 'سفيان بن حمودة',
+    authorHandle: '@sofiane_tunisia',
+    stars: 6,
+    comment: 'خدمة شحن سريعة وموثوقة جداً في تونس وشمال أفريقيا. تجربة 6 نجوم ممتازة ونتطلع للمزيد من التحديثات.',
+    createdAt: 'منذ 4 أيام',
+    activityType: 'وكيل شحن معتمد'
+  },
+  {
+    id: 'rev-30',
+    authorName: 'دلال العنزي',
+    authorHandle: '@dalal_alenazi_vip',
+    stars: 6,
+    comment: 'تفاعل رائع من الإدارة مع اقتراحات الأعضاء. الغرف الصوتية أصبحت أكثر متعة وأماناً، استمروا في هذا التميز.',
+    createdAt: 'منذ 5 أيام',
+    activityType: 'مستخدم VIP'
+  },
+  {
+    id: 'rev-31',
+    authorName: 'مروان الكردي',
+    authorHandle: '@marwan_kurdi',
+    stars: 6,
+    comment: 'فريق المراجعة متعاون جداً وتم اعتماد وكالتنا خلال يوم واحد فقط بعد مطابقة الشروط الرسمية.',
+    createdAt: 'منذ أسبوع',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-32',
+    authorName: 'بدر الشهري',
+    authorHandle: '@bader_shehri_vip',
+    stars: 6,
+    comment: 'خدمة راقية وهدايا مميزة في الرومات الصوتية ومستوى حماية عالي جداً ضد الإزعاج، شكراً لفريق العمل.',
+    createdAt: 'منذ أسبوع',
+    activityType: 'مستخدم VIP'
+  },
+  // 5-star comments (75% satisfaction tier)
+  {
+    id: 'rev-33',
+    authorName: 'كريم طارق حسن الشناوي',
+    authorHandle: '@karim_tech_bd',
+    stars: 5,
+    comment: 'تسجيل سهل وسريع بالنموذج المختصر. بانتظار استكمال بعض إجراءات التوثيق الرسمية للبدء في تشغيل فريقي بالكامل.',
+    createdAt: 'منذ يومين',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-34',
+    authorName: 'إياد الحلبي',
+    authorHandle: '@eyad_halabi',
+    stars: 5,
+    comment: 'منظومة واعدة جداً وخطوة ممتازة للصوتيات العربية، نتمنى إضافة بوابات دفع محلية إضافية لبعض الدول لتسهيل المعاملات أكثر.',
+    createdAt: 'منذ 4 أيام',
+    activityType: 'وكيل مضيفين'
+  },
+  {
+    id: 'rev-35',
+    authorName: 'شهد المنصوري',
+    authorHandle: '@shahad_almansoori',
+    stars: 5,
+    comment: 'تجربة جيدة جداً في البث الصوتي وهناك تفاعل ممتاز من الداعمين والمشرفين، ونأمل زيادة عدد الفعاليات اليومية.',
+    createdAt: 'منذ 5 أيام',
+    activityType: 'صانعة محتوى صوتي'
+  },
+  {
+    id: 'rev-36',
+    authorName: 'وائل السعدي',
+    authorHandle: '@wael_saadi_vip',
+    stars: 5,
+    comment: 'الخدمة ممتازة والدعم الفني يتجاوب بسرعة عند فتح التذاكر، لكن نتمنى تسريع إطلاق التحديث القادم للتطبيق.',
+    createdAt: 'منذ أسبوع',
+    activityType: 'مستخدم VIP'
+  },
+  // 4-star comments
+  {
+    id: 'rev-37',
+    authorName: 'جابر المري',
+    authorHandle: '@jaber_almarri_qa',
+    stars: 4,
+    comment: 'المنظومة جيدة ومتكاملة، ننتظر فقط مزيداً من الفعاليات الصوتية والمسابقات الأسبوعية للوكالات الجديدة.',
+    createdAt: 'منذ أسبوع',
+    activityType: 'مطور أعمال BD'
+  },
+  {
+    id: 'rev-38',
+    authorName: 'رزان الخطيب',
+    authorHandle: '@razan_voice_jordan',
+    stars: 4,
+    comment: 'غرف صوتية جميلة والجمهور محترم. تجربة جيدة في المجمل والدعم الفني يجيب على الاستفسارات.',
+    createdAt: 'منذ أسبوع',
+    activityType: 'صانعة محتوى صوتي'
+  },
+  // 3-star comments (16% score tier)
+  {
+    id: 'rev-39',
+    authorName: 'طلال البقمي',
+    authorHandle: '@talal_alboqami',
+    stars: 3,
+    comment: 'التطبيق ممتاز وقوي، ولكن واجهت بعض التأخير البسيط في الرد عبر الواتساب في وقت الذروة، وتم حل استفساري لاحقاً باحترافية.',
+    createdAt: 'منذ أسبوعين',
+    activityType: 'مستخدم مسجل'
+  },
+  // 2-star comments (11% score tier)
+  {
+    id: 'rev-40',
+    authorName: 'سليم التازي',
+    authorHandle: '@salim_tazi_maroc',
+    stars: 2,
+    comment: 'واجهت بطء في استجابة الصوت عند الاتصال بشبكة 3G القديمة على هاتفي السابق، نتمنى تحسين استهلاك البيانات للأجهزة المتوسطة.',
+    createdAt: 'منذ أسبوعين',
+    activityType: 'مستخدم مسجل'
+  },
+  // 1-star comment (2% score tier)
+  {
+    id: 'rev-41',
+    authorName: 'فهد المسعودي',
+    authorHandle: '@fahad_almasoudi',
+    stars: 1,
+    comment: 'تم رفض طلبي المبدئي لرتبة سوبر أدمن لعدم توفر شرط 15 مطور أعمال BD. الشروط صارمة جداً، رغم أنني أتفهم حرص الإدارة على معايير الجودة العالية.',
+    createdAt: 'منذ 3 أسابيع',
+    activityType: 'متقدم سابق'
   }
 ];

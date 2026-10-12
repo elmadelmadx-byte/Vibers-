@@ -70,6 +70,12 @@ export interface TeamApplication {
   submittedAt: string;
 }
 
+export interface TrashedApplication extends TeamApplication {
+  trashedAt: string;
+  trashedReason?: string;
+  originalStatusBeforeTrash?: TeamApplication['status'];
+}
+
 export interface UserRatingComment {
   id: string;
   authorName: string;
@@ -79,6 +85,7 @@ export interface UserRatingComment {
   createdAt: string;
   isBannedUser?: boolean;
   activityType?: string;
+  imageUrl?: string;
 }
 
 export interface LivePlatformStats {
@@ -124,6 +131,8 @@ export interface SubAdminPermissions {
   canEditBanners: boolean;
   canViewStatsOnly: boolean;
   canEvaluateCandidates: boolean;
+  canToggleRatingsLock?: boolean; // صلاحية قفل وفتح عرض التقييمات والآراء
+  canManageTrash?: boolean; // صلاحية حذف واسترجاع المتقدمين من سلة المهملات
 }
 
 export interface SubAdminAccount {
@@ -141,4 +150,27 @@ export interface ActiveAdminSession {
   email: string;
   name: string;
   permissions: SubAdminPermissions;
+}
+
+export interface ContactChannel {
+  id: string;
+  type: 'whatsapp' | 'email' | 'phone';
+  labelAr: string;
+  value: string;
+  descriptionAr: string;
+  isPrimary?: boolean;
+}
+
+export interface SupportTicket {
+  id: string;
+  trackingCode: string;
+  applicantOrUserName: string;
+  realFullNameOptional?: string;
+  role: string;
+  whatsappOrEmail: string;
+  problemDescription: string;
+  reasonOrDetails: string;
+  status: 'new' | 'in_progress' | 'resolved';
+  createdAt: string;
+  adminReply?: string;
 }
